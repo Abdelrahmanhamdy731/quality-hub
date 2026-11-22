@@ -1,0 +1,19 @@
+{
+  "name": "quality-hub",
+  "version": "1.0.0",
+  "description": "Bilingual project quality workspace",
+  "scripts": {
+    "build": "node build.mjs",
+    "check": "node --check src/app.js"
+  },
+  "keywords": [],
+  "author": "",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.119.2",
+    "esbuild": "^0.28.2",
+    "playwright": "^1.65.1",
+    "xlsx": "^0.18.5"
+  },
+  "private": true,
+  "type": "module"
+}

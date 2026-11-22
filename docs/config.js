@@ -1,0 +1,1 @@
+window.QUALITY_CONFIG={"url":"https://vkalxaaujzzdtootllax.supabase.co","anonKey":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZrYWx4YWF1anp6ZHRvb3RsbGF4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTUzMTY1NzcsImV4cCI6MjExMDg5MjU3N30.AtT_SJ7w3DPINDn7WiLRJcgVo0NokdZeiJeCzbu0XgQ"};
