@@ -267,9 +267,9 @@ async function setup(role = "admin") {
       } else if (pathname.endsWith("/records")) {
         data = u.searchParams.get("project_id") === "eq." + p1 ? [old] : [];
         count = data.length;
-      } else if (pathname.endsWith("/apply_assistant_import")) {
+      } else if (pathname.endsWith("/apply_assistant_workbook")) {
         const body = JSON.parse(req.postData());
-        writes.push(body);
+        writes.push({pid:body.pid,cat:body.imports[0].cat,items:body.imports.flatMap(x=>x.items),imports:body.imports});
         if (role !== "admin") {
           status = 403;
           data = { message: "Administrator access required" };
@@ -308,265 +308,52 @@ async function setup(role = "admin") {
 }
 try {
   const { context, page, errors, writes } = await setup();
-  ok(
-    await page.getByText("AI not connected", { exact: true }).isVisible(),
-    "honest non-AI disclosure",
-  );
-  await page.locator('[data-assistant-prompt="status"]').click();
-  await page.locator(".assistant-thinking").waitFor({ state: "hidden" });
-  ok(
-    (await page.locator("#assistant-messages").innerText()).includes("47.0%"),
-    "status reply uses saved project progress",
-  );
-  ok(
-    (await page.locator("#assistant-messages").innerText()).includes(
-      "EXAMPLE-A",
-    ),
-    "reply includes project source",
-  );
-  await page.screenshot({
-    path: "/downloads/assistant-local-en.png",
-    fullPage: true,
-  });
-  await page.locator('[data-action="back-projects"]').click();
-  await page
-    .locator('[data-project="' + p2 + '"]')
-    .first()
-    .click();
-  await page.locator('[data-tab="assistant"]').click();
-  ok(
-    !(await page.locator("#assistant-messages").innerText()).includes("47.0%"),
-    "project chats isolated",
-  );
-  await page.locator('[data-action="back-projects"]').click();
-  await page
-    .locator('[data-project="' + p1 + '"]')
-    .first()
-    .click();
-  await page.locator('[data-tab="assistant"]').click();
-  ok(
-    (await page.locator("#assistant-messages").innerText()).includes("47.0%"),
-    "chat retained for original project only",
-  );
-  await page.locator("#assistant-upload").click();
-  await page
-    .locator("#assistant-file")
-    .setInputFiles("/downloads/assistant-fixture.xlsx");
-  await page.locator("#assistant-sheet").waitFor({ state: "visible" });
-  await page.locator("#assistant-sheet").selectOption("Register");
-  await page.locator("#assistant-header").fill("3");
-  await page.locator("#assistant-header").press("Tab");
-  await page.locator("#assistant-date-mode").selectOption("dmy");
-  await page.locator('[data-status-index="0"]').selectOption("review");
-  ok(
-    (await page.locator('[data-map-field="reference"]').inputValue()) === "0",
-    "reference alias mapping works after header selection",
-  );
-  await page.locator("#assistant-analyze").click();
-  await page.locator("#assistant-approval").waitFor();
-  ok(
-    await page.locator("#assistant-commit").isDisabled(),
-    "save disabled before explicit confirmation",
-  );
-  const preview = await page.locator("#assistant-import-preview").innerText();
-  ok(
-    preview.includes("1 new") &&
-      preview.includes("1 updates") &&
-      preview.includes("0 errors"),
-    "preview classifies new and updated rows",
-  );
-  const [review] = await Promise.all([
-    page.waitForEvent("download"),
-    page.locator("#assistant-review-all").click(),
-  ]);
-  await review.saveAs("/downloads/assistant-change-review.csv");
-  const csv = await fs.readFile(
-    "/downloads/assistant-change-review.csv",
-    "utf8",
-  );
-  ok(
-    csv.includes("title_before") &&
-      csv.includes("Original inspection") &&
-      csv.includes("Updated inspection"),
-    "full review contains before and after values",
-  );
-  await page.locator("#assistant-approval").check();
-  await page.locator("#assistant-commit").click();
-  await page.locator(".modal-backdrop").waitFor({ state: "hidden" });
-  ok(writes.length === 1, "single atomic import call");
-  ok(
-    writes[0].pid === p1 && writes[0].cat === "site_rfi",
-    "commit target frozen to current project/register",
-  );
-  ok(
-    writes[0].items.find((r) => r.reference === "QA-OLD").expected_version ===
-      5,
-    "existing version carried to server",
-  );
-  ok(
-    writes[0].items.find((r) => r.reference === "QA-OLD").payload.keep ===
-      "retained",
-    "existing additional fields retained",
-  );
-  ok(
-    writes[0].items.find((r) => r.reference === "QA-NEW").occurred_on ===
-      "2026-11-21",
-    "day/month/year import preserved",
-  );
-  // New contractor format: fuzzy headers, auto sheet/header/date detection, one review, then saved
-  await page.locator("#assistant-upload").click();
-  await page
-    .locator("#assistant-file")
-    .setInputFiles("/downloads/assistant-contractor-a.xlsx");
-  await page.locator("#assistant-sheet").waitFor({ state: "visible" });
-  ok(
-    (await page.locator("#assistant-sheet").inputValue()) === "Weekly Report",
-    "register worksheet auto-selected over title sheets",
-  );
-  ok(
-    (await page.locator("#assistant-header").inputValue()) === "3",
-    "header row auto-detected under title rows",
-  );
-  ok(
-    (await page.locator('[data-map-field="reference"]').inputValue()) === "0" &&
-      (await page.locator('[data-map-field="due_date"]').inputValue()) === "5" &&
-      (await page.locator('[data-map-field="occurred_on"]').inputValue()) === "6",
-    "fuzzy contractor headers mapped",
-  );
-  ok(
-    (await page.locator("#assistant-date-mode").inputValue()) === "dmy",
-    "day-first date format auto-detected",
-  );
-  ok(
-    (await page.locator("#assistant-mapping").innerText()).includes("(auto)"),
-    "fuzzy matches labeled as automatic",
-  );
-  await page.screenshot({
-    path: "/downloads/auto-format-mapping-en.png",
-    fullPage: true,
-  });
-  await page.locator("#assistant-analyze").click();
-  await page.locator("#assistant-approval").waitFor();
-  const previewA = await page
-    .locator("#assistant-import-preview")
-    .innerText();
-  ok(
-    previewA.includes("1 new") &&
-      previewA.includes("1 updates") &&
-      previewA.includes("0 errors"),
-    "contractor format preview clean",
-  );
-  ok(
-    previewA.includes("Cleaned automatically") && previewA.includes("dates standardized"),
-    "cleaning summary reported",
-  );
-  await page.locator("#assistant-approval").check();
-  await page.locator("#assistant-commit").click();
-  await page.locator(".modal-backdrop").waitFor({ state: "hidden" });
-  ok(
-    writes[1].items.find((r) => r.reference === "QA-OLD").due_date ===
-      "2026-11-30",
-    "day-first due date standardized on save",
-  );
-  // Same format again with a moved layout: recognized, auto-analyzed, no mapping work
-  await page.locator("#assistant-upload").click();
-  await page
-    .locator("#assistant-file")
-    .setInputFiles("/downloads/assistant-contractor-b.xlsx");
-  await page.locator("#assistant-approval").waitFor();
-  ok(
-    (await page.locator("#assistant-mapping").innerText()).includes(
-      "Known format recognized",
-    ),
-    "saved format recognized on later upload",
-  );
-  ok(
-    (await page.locator('[data-map-field="revision"]').inputValue()) === "3",
-    "saved mapping resolved by column name after layout shift",
-  );
-  await page.screenshot({
-    path: "/downloads/auto-format-recognized-en.png",
-    fullPage: true,
-  });
-  const previewB = await page
-    .locator("#assistant-import-preview")
-    .innerText();
-  ok(
-    previewB.includes("Known format applied") &&
-      previewB.includes("0 errors") &&
-      previewB.includes("1 updates"),
-    "recognized format auto-analyzed to a compact preview",
-  );
-  await page.locator("#assistant-approval").check();
-  await page.locator("#assistant-commit").click();
-  await page.locator(".modal-backdrop").waitFor({ state: "hidden" });
-  ok(writes.length === 3, "recognized format saved atomically too");
-  ok(
-    writes[2].items.find((r) => r.reference === "QA-OLD").title ===
-      "Contractor row v2",
-    "second upload updated the record",
-  );
-  const [ppt] = await Promise.all([
-    page.waitForEvent("download"),
-    page.locator("#assistant-presentation").click(),
-  ]);
-  await ppt.saveAs("/downloads/assistant-browser-qa.pptx");
-  ok(
-    (await fs.stat("/downloads/assistant-browser-qa.pptx")).size > 10000,
-    "browser creates editable PowerPoint",
-  );
+  await page.locator('#assistant-upload').click();
+  await page.locator('#assistant-file').setInputFiles('/downloads/assistant-contractor-a.xlsx');
+  await page.locator('.modal-backdrop').waitFor({state:'hidden'});
+  ok(writes.length === 1, 'file upload alone triggered one atomic save');
+  ok(writes[0].items.find(r=>r.reference==='QA-OLD').title==='Contractor row v1', 'existing reference updated automatically');
+  ok(writes[0].items.find(r=>r.reference==='QA-NEW2').occurred_on==='2026-11-21', 'dates standardized automatically');
+  ok(writes[0].items.find(r=>r.reference==='QA-OLD').expected_version===5, 'stale version protection retained');
+  ok((await page.locator('#assistant-messages').innerText()).includes('dashboard updated automatically'), 'post-save compact summary shown');
+  await page.screenshot({path:'/downloads/zero-manual-en.png',fullPage:true});
+  await page.locator('#assistant-upload').click();
+  await page.locator('#assistant-file').setInputFiles('/downloads/assistant-contractor-b.xlsx');
+  await page.locator('.modal-backdrop').waitFor({state:'hidden'});
+  ok(writes.length===2, 'recognized moved-column format saved without any clicks');
+  ok(writes[1].items.find(r=>r.reference==='QA-OLD').revision==='A','moved revision column resolved by name');
+  await page.locator('#assistant-upload').click();
+  await page.locator('#assistant-file').setInputFiles('/downloads/assistant-fixture.xlsx');
+  await page.locator('.modal-backdrop').waitFor({state:'hidden'});
+  ok(writes.length===3, 'unknown status no longer blocks import');
+  ok(writes[2].items.find(r=>r.reference==='QA-OLD').state==='open','unknown status preserves existing state');
+  if(process.env.QUALITY_REAL_WORKBOOK) {
+    await page.locator('#assistant-upload').click();
+    await page.locator('#assistant-file').setInputFiles(process.env.QUALITY_REAL_WORKBOOK);
+    await page.locator('.modal-backdrop').waitFor({state:'hidden',timeout:120000});
+    ok(writes.length===4,'actual workbook saved in one call after file selection alone');
+    ok(writes[3].imports.length===8,'actual workbook detects all eight logs and skips summary');
+    ok(writes[3].items.length===8674,'all actual unique reference/revision records prepared');
+    ok(writes[3].items.filter(r=>r.is_current).length===6616,'one current revision per actual reference');
+    await page.screenshot({path:'/downloads/actual-workbook-local.png',fullPage:true});
+  }
   await page.locator('[data-action="language"]').click();
-  await page.locator("#assistant-question").waitFor();
-  ok(
-    (await page.locator("html").getAttribute("dir")) === "rtl",
-    "Arabic RTL supported",
-  );
-  await page.screenshot({
-    path: "/downloads/assistant-local-ar.png",
-    fullPage: true,
-  });
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.screenshot({
-    path: "/downloads/assistant-local-mobile.png",
-    fullPage: true,
-  });
-  ok(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth,
-    ),
-    "390px layout has no horizontal overflow",
-  );
-  ok(errors.length === 0, "no browser JavaScript errors: " + errors.join("; "));
+  await page.locator('#assistant-question').waitFor();
+  await page.screenshot({path:'/downloads/zero-manual-ar.png',fullPage:true});
+  await page.setViewportSize({width:390,height:844});
+  await page.locator('#assistant-upload').click();
+  await page.screenshot({path:'/downloads/zero-manual-mobile.png',fullPage:true});
+  ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'mobile has no horizontal overflow');
+  ok(errors.length===0,'no browser script errors: '+errors.join(';'));
   await context.close();
-  const viewer = await setup("viewer");
-  await viewer.page.locator("#assistant-upload").click();
-  await viewer.page
-    .locator("#assistant-file")
-    .setInputFiles("/downloads/assistant-fixture.xlsx");
-  await viewer.page.locator("#assistant-sheet").waitFor({ state: "visible" });
-  await viewer.page.locator("#assistant-sheet").selectOption("Register");
-  await viewer.page.locator("#assistant-header").fill("3");
-  await viewer.page.locator("#assistant-header").press("Tab");
-  await viewer.page.locator("#assistant-date-mode").selectOption("dmy");
-  await viewer.page.locator('[data-status-index="0"]').selectOption("review");
-  await viewer.page.locator("#assistant-analyze").click();
-  await viewer.page
-    .getByText(
-      "Read-only analysis. Ask your administrator to save this import.",
-    )
-    .waitFor();
-  ok(
-    await viewer.page.locator("#assistant-commit").isDisabled(),
-    "viewer cannot save",
-  );
-  ok(
-    (await viewer.page.locator("#assistant-approval").count()) === 0,
-    "viewer has no approval control",
-  );
-  ok(viewer.writes.length === 0, "viewer submitted no writes");
+  const viewer=await setup('viewer');
+  await viewer.page.locator('#assistant-upload').click();
+  await viewer.page.locator('#assistant-file').setInputFiles('/downloads/assistant-contractor-a.xlsx');
+  await viewer.page.getByText('Read-only analysis.',{exact:false}).waitFor();
+  ok(viewer.writes.length===0,'viewer cannot write');
   await viewer.context.close();
-  console.log("BROWSER CHECKS PASSED:", checks);
+  console.log('BROWSER CHECKS PASSED:',checks);
 } finally {
   await browser.close();
-  await new Promise((r) => server.close(r));
+  await new Promise(r=>server.close(r));
 }

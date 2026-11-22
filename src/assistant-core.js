@@ -173,7 +173,8 @@ export function suggestDetailed(headers) {
     fuzzy = [],
     hn = headers.map(norm);
   for (const f of fields) {
-    const i = hn.findIndex((h, i) => !used.has(i) && aliasNorm[f].includes(h));
+    const priority = f === 'owner' ? hn.findIndex((h,i) => !used.has(i) && ['inspected by','witnessed by','adnoc representative','inspector','inspector name','qc inspector'].includes(h)) : -1;
+    const i = priority >= 0 ? priority : hn.findIndex((h, i) => !used.has(i) && aliasNorm[f].includes(h));
     m[f] = i < 0 ? "" : String(i);
     if (i >= 0) used.add(i);
   }
@@ -204,26 +205,60 @@ export function suggestDetailed(headers) {
 export function suggestMapping(headers) {
   return suggestDetailed(headers).mapping;
 }
-export function headerScore(grid, scan = 10) {
-  const aliasSet = new Set(fields.flatMap((f) => aliasNorm[f]));
-  let row = 0,
-    score = 0;
-  const lim = Math.min(scan, grid.length);
-  for (let r = 0; r < lim; r++) {
-    const s = (grid[r] || []).reduce(
-      (n, c) => n + (aliasSet.has(norm(c)) ? 1 : 0),
-      0,
-    );
-    if (s > score) {
-      row = r;
-      score = s;
+export function headerScore(grid, scan = 50) {
+  let row = 0, score = 0;
+  for (let r = 0; r < Math.min(scan, grid.length); r++) {
+    const cells = grid[r] || [];
+    const labels = cells.filter(v => String(v ?? '').trim());
+    if (labels.length < 2) continue;
+    const found = suggestDetailed(cells).mapping;
+    const matched = Object.values(found).filter(v => v !== '').length;
+    const essential = Number(found.reference !== '') + Number(found.title !== '');
+    // Title blocks have one long cell. Real headers have several short labels
+    // and a rectangular data region below them, even far down the worksheet.
+    const short = labels.filter(v => String(v).length < 70).length / labels.length;
+    const following = grid.slice(r + 1, r + 6).filter(x => x.filter(v => String(v ?? '').trim()).length >= 2).length;
+    const s = matched * 3 + essential * 3 + short + Math.min(following, 3) * 0.2;
+    if (matched >= 2 && s > score) { row = r; score = s; }
+  }
+  if (!score) {
+    for (let r = 0; r < Math.min(scan, grid.length - 1); r++) {
+      const cells = grid[r] || [];
+      if (cells.filter(v => String(v ?? '').trim()).length < 2) continue;
+      const inferred = inferMapping(cells, grid.slice(r + 1));
+      if (inferred.mapping.reference !== '' && inferred.mapping.title !== '') {
+        const values = cells.filter(v => String(v ?? '').trim());
+        if (values.every(v => typeof v === 'string' && String(v).length < 100)) {
+          row = r; score = 1; break;
+        }
+      }
     }
   }
-  return { row: score >= 2 ? row : 0, score };
+  return { row, score };
 }
-export function detectHeaderRow(grid, scan = 10) {
+export function detectHeaderRow(grid, scan = 50) {
   return headerScore(grid, scan).row;
 }
+
+export function inferMapping(headers, rows) {
+  const result = suggestDetailed(headers), m = result.mapping;
+  const used = new Set(Object.values(m).filter(v => v !== '').map(Number));
+  const samples = headers.map((_, i) => rows.slice(0, 100).map(r => cleanText(r[i])).filter(Boolean));
+  const pick = (field, scoring, threshold) => {
+    if (m[field] !== '') return;
+    const candidates = samples.map((values, i) => ({ i, score: used.has(i) || !values.length ? 0 : scoring(values, i) })).sort((a,b) => b.score-a.score);
+    if (candidates[0]?.score >= threshold) { m[field] = String(candidates[0].i); used.add(candidates[0].i); result.fuzzy.push(field); }
+  };
+  pick('reference', values => {
+    const identifiers = values.filter(v => v.length <= 150 && /[A-Za-z]/.test(v) && /\d/.test(v) && /[-/]/.test(v) && !/\s/.test(v)).length / values.length;
+    return identifiers * (new Set(values).size / values.length);
+  }, 0.7);
+  pick('title', values => values.filter(v => v.length > 12 && /\s/.test(v)).length / values.length, 0.65);
+  pick('status', values => values.filter(v => normalizeState(v)).length / values.length, 0.7);
+  pick('revision', (values, i) => /rev/i.test(headers[i]) ? 1 : 0, 1);
+  return result;
+}
+
 export function detectDateMode(rows, mapping) {
   const cols = [mapping.due_date, mapping.occurred_on]
     .filter((v) => v !== "" && v != null)
@@ -309,6 +344,9 @@ export function normalizeState(value) {
       "reopened",
       "re opened",
       "ongoing",
+      "rejected",
+      "not satisfactory",
+      "unsatisfactory",
       "مفتوح",
       "مفتوحة",
       "قيد الانتظار",
@@ -316,6 +354,12 @@ export function normalizeState(value) {
       "قيد التنفيذ",
     ],
     closed: [
+      "satisfactory",
+      "satisfactory w/c",
+      "satisfactory with comments",
+      "satisfactory with commets",
+      "satisfactory w/comment",
+      "accepted with comments",
       "closed",
       "close",
       "approved",
@@ -345,7 +389,7 @@ export function normalizeState(value) {
       "قيد المراجعة",
       "للمراجعة",
     ],
-    void: ["void", "cancelled", "canceled", "withdrawn", "ملغي", "مسحوب"],
+    void: ["cancel", "with draw rfi", "rfi withdrawn", "not in used rfi number", "not ready for inspection", "not ready", "void", "cancelled", "canceled", "withdrawn", "ملغي", "مسحوب"],
     superseded: ["superseded", "replaced", "مستبدل", "تم استبداله"],
     other: ["other", "أخرى"],
   };
@@ -391,6 +435,7 @@ export function analyzeRows({
   stateMap = {},
   fileName = "",
   sheetName = "",
+  automatic = false,
 }) {
   const errors = [],
     prepared = [],
@@ -399,7 +444,7 @@ export function analyzeRows({
     byKey = new Map(
       existing.map((r) => [JSON.stringify([r.reference, r.revision]), r]),
     ),
-    cleaning = { dates: 0, statuses: 0, trimmed: 0 };
+    cleaning = { dates: 0, statuses: 0, trimmed: 0, warnings: [] };
   let added = 0,
     updated = 0;
   if (mapping.reference === "")
@@ -462,7 +507,7 @@ export function analyzeRows({
           };
       for (const f of ["title", "status", "owner", "discipline"]) {
         const v = readText(f);
-        if (v !== undefined) r[f] = v;
+        if (v !== undefined && !(automatic && old && v === '')) r[f] = v;
       }
       if (!r.title || r.title.length > 3000)
         throw Error(
@@ -473,6 +518,14 @@ export function analyzeRows({
           read("state") !== undefined ? cleanText(read("state")) : r.status;
         const custom = stateMap[value];
         r.state = custom || normalizeState(value);
+        if (!r.state && automatic && value === '') {
+          r.state = old?.state || 'other';
+          cleaning.warnings.push('Blank status preserved without guessing');
+        }
+        if (!r.state && automatic) {
+          r.state = old?.state || 'other';
+          cleaning.warnings.push('Unrecognized status kept as source text: ' + value);
+        }
         if (!r.state) throw Error("Map the status: " + value);
         if (
           !["open", "closed", "review", "void", "superseded", "other"].includes(
@@ -485,7 +538,23 @@ export function analyzeRows({
       for (const f of ["due_date", "occurred_on"])
         if (read(f) !== undefined) {
           const raw = read(f);
-          r[f] = validDate(raw, dateMode);
+          if (automatic && old && (raw === '' || raw == null)) continue;
+          try {
+            let parsed = raw;
+            if (automatic && /^\d{5}(\.\d+)?$/.test(String(raw)) && Number(raw) >= 20000 && Number(raw) < 100000) {
+              parsed = new Date(Date.UTC(1899, 11, 30) + Math.floor(Number(raw)) * 86400000).toISOString().slice(0, 10);
+            }
+            if (automatic && /^\d{1,2}[- /][A-Za-z]{3,9}[- /]\d{2,4}$/.test(String(raw))) {
+              const d = new Date(String(raw));
+              if (Number.isFinite(d.getTime())) parsed = d.toISOString().slice(0,10);
+            }
+            r[f] = validDate(parsed, dateMode);
+          }
+          catch (e) {
+            if (!automatic) throw e;
+            cleaning.warnings.push('Unresolved date retained in source fields: ' + String(raw));
+            continue;
+          }
           if (raw instanceof Date || String(raw).trim() !== String(r[f]))
             cleaning.dates++;
         }
@@ -499,13 +568,13 @@ export function analyzeRows({
         headers
           .map((h, j) => [
             String(j + 1) + ". " + String(h || "Column " + (j + 1)),
-            row[j] instanceof Date ? validDate(row[j]) : (row[j] ?? ""),
+            (row._original || row)[j] instanceof Date ? validDate((row._original || row)[j]) : ((row._original || row)[j] ?? ""),
           ])
           .filter(([, v]) => v !== ""),
       );
       r.payload = {
         ...(old?.payload || {}),
-        last_upload: { file: fileName, sheet: sheetName, columns: extra },
+        last_upload: { file: fileName, sheet: sheetName, source_row: row._sourceRow || i + 1, columns: extra },
       };
       const out = Object.fromEntries(
         [
@@ -537,6 +606,22 @@ export function analyzeRows({
       errors.push({ row: i + 1, message: e.message });
     }
   });
+  if (automatic) {
+    const all = [...existing, ...prepared];
+    const refs = [...new Set(prepared.map(r=>r.reference))];
+    for (const ref of refs) {
+      const revisions = all.filter(r=>r.reference===ref).map(r=>r.revision || '');
+      const latest = [...new Set(revisions)].sort((a,b)=>a.localeCompare(b,undefined,{numeric:true})).at(-1);
+      for(const row of prepared.filter(r=>r.reference===ref)) row.is_current=row.revision===latest;
+      for(const old of existing.filter(r=>r.reference===ref && r.is_current && r.revision!==latest)) {
+        if(prepared.some(r=>r.reference===ref && r.revision===old.revision)) continue;
+        const out=Object.fromEntries(fields.map(f=>[f,old[f]]));
+        out.payload=old.payload || {}; out.expected_version=old.version; out.is_current=false;
+        prepared.push(out); updated++;
+        changes.push({reference:ref,revision:old.revision,change:'update',before:old,after:out});
+      }
+    }
+  }
   for (const c of changes) {
     if (c.change === "new" && c.after.is_current) {
       const older = existing.filter(

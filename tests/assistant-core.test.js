@@ -307,3 +307,32 @@ test("cleaning counts dates, statuses and trimmed cells", () => {
   assert.equal(r.prepared[0].title, "Example inspection");
   assert.equal(r.prepared[0].state, "review");
 });
+
+// Automatic import regression coverage.
+import { inferMapping } from '../src/assistant-core.js';
+test('title block and fuzzy labels beyond row ten do not become the header', () => {
+  const grid = [['','','','Construction of Flowlines and Wellhead Tie-ins at BAB/NEB Field'], ...Array.from({length:23},()=>[]), ['Document Ref. No','Work Description','Rev No.','Approval Status'], ['RFI-001','Pipe inspection','A','Approved']];
+  assert.equal(detectHeaderRow(grid),24);
+});
+test('automatic mode preserves reliable existing state for unknown status text', () => {
+  const r = analyzeRows({...base, automatic:true, rows:[['QA-01','Updated inspection','A','Contractor code X','Inspector','2026-11-22']], existing:[{reference:'QA-01',revision:'A',title:'Old',status:'Open',state:'open',version:2,payload:{}}]});
+  assert.equal(r.errors.length,0); assert.equal(r.prepared[0].state,'open');
+  assert.equal(r.prepared[0].status,'Contractor code X'); assert.equal(r.cleaning.warnings.length,1);
+});
+test('automatic mode preserves ambiguous date in source without overwriting saved date', () => {
+  const r = analyzeRows({...base, automatic:true, rows:[['QA-01','Updated inspection','A','Open','Inspector','02/03/2026']], existing:[{reference:'QA-01',revision:'A',title:'Old',status:'Open',state:'open',occurred_on:'2026-01-01',version:2,payload:{}}]});
+  assert.equal(r.errors.length,0); assert.equal(r.prepared[0].occurred_on,'2026-01-01');
+  assert.ok(Object.values(r.prepared[0].payload.last_upload.columns).includes('02/03/2026'));
+});
+test('automatic mode does not clear existing fields from blank cells', () => {
+  const r=analyzeRows({...base,automatic:true,rows:[['QA-01','Updated inspection','A','Open','','2026-11-22']],existing:[{reference:'QA-01',revision:'A',title:'Old',status:'Open',state:'open',owner:'Existing inspector',version:2,payload:{}}]});
+  assert.equal(r.errors.length,0);assert.equal(r.prepared[0].owner,'Existing inspector');
+});
+test('data-shape inference recovers reference, description and status without using serial numbers', () => {
+  const r=inferMapping(['Sequence','Key','Details text','Result'],[[1,'RFI-001','Pipework inspection','Approved'],[2,'RFI-002','Concrete inspection','Open']]);
+  assert.equal(r.mapping.reference,'1');assert.equal(r.mapping.title,'2');assert.equal(r.mapping.status,'3');
+});
+test('automatic mode reads Excel serial dates in explicitly mapped date columns', () => {
+  const r=analyzeRows({...base,automatic:true,rows:[['QA-01','Example inspection','A','Open','Inspector','46348']]});
+  assert.equal(r.errors.length,0);assert.match(r.prepared[0].occurred_on,/^2026-/);
+});

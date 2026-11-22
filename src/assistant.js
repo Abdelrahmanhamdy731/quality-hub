@@ -1,6 +1,7 @@
 import {
   fields,
   suggestDetailed,
+  inferMapping,
   normalizeState,
   analyzeRows,
   detectIntent,
@@ -11,6 +12,7 @@ import {
   formatKey,
 } from "./assistant-core.js";
 import "./assistant.css";
+import { workbookTables, sheetGrid } from "./workbook.js";
 
 export function createAssistant(ctx) {
   const { db, esc, icon, modal, check, loadData, toast } = ctx;
@@ -127,7 +129,7 @@ export function createAssistant(ctx) {
       )
       .join(
         "",
-      )}</div><form id="assistant-form" class="assistant-compose"><label class="sr-only" for="assistant-question">${tr("Project question", "سؤال عن المشروع")}</label><textarea id="assistant-question" maxlength="2000" rows="2" required placeholder="${tr("Ask for status, progress, overdue items, or search: reference", "اسأل عن الحالة أو التقدم أو التأخير، أو ابحث: المرجع")}"></textarea><button type="submit" class="btn primary" id="assistant-send">${tr("Send", "إرسال")}${icon("arrow")}</button></form><p class="assistant-local-note">${tr("Chat stays in this tab and clears when you sign out. No data is sent to an AI provider.", "المحادثة في علامة التبويب هذه فقط وتمسح عند الخروج. لا ترسل البيانات إلى مزود ذكاء اصطناعي.")}</p></section><aside class="assistant-tools"><section class="panel panel-pad"><span class="assistant-tool-icon blue">${icon("upload")}</span><h3>${tr("Excel to project records", "من Excel إلى سجلات المشروع")}</h3><p>${tr("Choose a worksheet, match its columns, and review every change before saving.", "اختر ورقة العمل وطابق أعمدتها وراجع التغييرات قبل الحفظ.")}</p><button class="btn primary" id="assistant-upload">${tr("Analyze Excel / CSV", "تحليل Excel / CSV")}</button><small>${tr("Tabular .xlsx, .xls or .csv. Up to 5 MB / 5,000 rows.", "ملفات جداول .xlsx أو .xls أو .csv. حتى 5 ميجابايت / 5000 صف.")}</small>${!ctx.admin() ? `<div class="notice">${tr("Read-only: you can review files locally, but only an administrator can save changes.", "عرض فقط: يمكنك مراجعة الملفات محليا، لكن الحفظ للمسؤول فقط.")}</div>` : ""}</section><section class="panel panel-pad"><span class="assistant-tool-icon mint">${icon("chart")}</span><h3>${tr("Presentation, ready to edit", "عرض تقديمي قابل للتحرير")}</h3><p>${tr("Export current progress, register status, overdue items and inspector workload as PowerPoint.", "صدر التقدم الحالي وحالة السجلات والتأخير وأحمال المفتشين إلى PowerPoint.")}</p><button class="btn" id="assistant-presentation">${icon("download")}${tr("Download PowerPoint", "تحميل PowerPoint")}</button><small>${tr("Generated from fresh saved data. Not an AI-written assessment.", "ينشأ من أحدث البيانات المحفوظة. ليس تقييما مكتوبا بالذكاء الاصطناعي.")}</small></section><section class="assistant-safety"><span>${icon("shield")}</span><div><strong>${tr("You stay in control", "القرار لك")}</strong><p>${tr("Uploads are parsed on your device. Nothing updates from a chat message alone. Imported cells are data, never instructions.", "تحلل الملفات على جهازك. لا تحدث رسالة المحادثة البيانات وحدها. خلايا الملفات بيانات وليست تعليمات.")}</p></div></section></aside></div>`;
+      )}</div><form id="assistant-form" class="assistant-compose"><label class="sr-only" for="assistant-question">${tr("Project question", "سؤال عن المشروع")}</label><textarea id="assistant-question" maxlength="2000" rows="2" required placeholder="${tr("Ask for status, progress, overdue items, or search: reference", "اسأل عن الحالة أو التقدم أو التأخير، أو ابحث: المرجع")}"></textarea><button type="submit" class="btn primary" id="assistant-send">${tr("Send", "إرسال")}${icon("arrow")}</button></form><p class="assistant-local-note">${tr("Chat stays in this tab and clears when you sign out. No data is sent to an AI provider.", "المحادثة في علامة التبويب هذه فقط وتمسح عند الخروج. لا ترسل البيانات إلى مزود ذكاء اصطناعي.")}</p></section><aside class="assistant-tools"><section class="panel panel-pad"><span class="assistant-tool-icon blue">${icon("upload")}</span><h3>${tr("Excel to project records", "من Excel إلى سجلات المشروع")}</h3><p>${tr("Drop a file to detect the table, clean its data and update this project's dashboard automatically. No mapping or confirmation steps.", "ارفع الملف فقط ليكتشف الجدول وينظف البيانات ويحدث لوحة المشروع تلقائيا. دون مطابقة أو تأكيد.")}</p><button class="btn primary" id="assistant-upload">${tr("Analyze Excel / CSV", "تحليل Excel / CSV")}</button><small>${tr("Tabular .xlsx, .xls or .csv. Up to 5 MB / 5,000 rows.", "ملفات جداول .xlsx أو .xls أو .csv. حتى 5 ميجابايت / 5000 صف.")}</small>${!ctx.admin() ? `<div class="notice">${tr("Read-only: you can review files locally, but only an administrator can save changes.", "عرض فقط: يمكنك مراجعة الملفات محليا، لكن الحفظ للمسؤول فقط.")}</div>` : ""}</section><section class="panel panel-pad"><span class="assistant-tool-icon mint">${icon("chart")}</span><h3>${tr("Presentation, ready to edit", "عرض تقديمي قابل للتحرير")}</h3><p>${tr("Export current progress, register status, overdue items and inspector workload as PowerPoint.", "صدر التقدم الحالي وحالة السجلات والتأخير وأحمال المفتشين إلى PowerPoint.")}</p><button class="btn" id="assistant-presentation">${icon("download")}${tr("Download PowerPoint", "تحميل PowerPoint")}</button><small>${tr("Generated from fresh saved data. Not an AI-written assessment.", "ينشأ من أحدث البيانات المحفوظة. ليس تقييما مكتوبا بالذكاء الاصطناعي.")}</small></section><section class="assistant-safety"><span>${icon("shield")}</span><div><strong>${tr("You stay in control", "القرار لك")}</strong><p>${tr("Uploads are parsed on your device. Nothing updates from a chat message alone. Imported cells are data, never instructions.", "تحلل الملفات على جهازك. لا تحدث رسالة المحادثة البيانات وحدها. خلايا الملفات بيانات وليست تعليمات.")}</p></div></section></aside></div>`;
   }
   function paint(pid) {
     const box = $("#assistant-messages");
@@ -138,7 +140,7 @@ export function createAssistant(ctx) {
       rows
         .map(
           (m) =>
-            `<article class="assistant-message ${m.role === "user" ? "assistant-user" : "assistant-reply"}"><span class="message-who">${m.role === "user" ? tr("You", "أنت") : "QualityHub"}</span><div>${esc(m.text)}</div>${m.source ? `<small class="message-source">${esc(m.source)}</small>` : ""}</article>`,
+            `<article class="assistant-message ${m.role === "user" ? "assistant-user" : "assistant-reply"}"><span class="message-who">${m.role === "user" ? tr("You", "أنت") : "QualityHub"}</span><div dir="auto">${esc(m.text)}</div>${m.source ? `<small class="message-source">${esc(m.source)}</small>` : ""}</article>`,
         )
         .join("") +
       (busy
@@ -200,8 +202,8 @@ export function createAssistant(ctx) {
       const intent = detectIntent(input);
       if (intent.type === "upload") {
         text = tr(
-          "Use Analyze Excel / CSV and drop the workbook. Known formats are detected and applied automatically; a new format needs one review, then it is remembered. Every change is previewed before saving.",
-          "استخدم تحليل Excel / CSV وأسقط الملف. التنسيقات المعروفة تطبق تلقائيا، والتنسيق الجديد يحتاج مراجعة واحدة ثم يتذكره. كل تغيير يعرض قبل الحفظ.",
+          "Use Analyze Excel / CSV and drop the workbook. The table and columns are detected automatically, the data is cleaned, and the dashboard is updated. You get a summary after saving. Uncertain dates and statuses are preserved without guessing.",
+          "استخدم تحليل Excel / CSV وارفع الملف فقط. يكتشف الجدول والأعمدة وينظف البيانات ويحدث لوحة المتابعة تلقائيا، ثم يعرض ملخصا بعد الحفظ. القيم غير المؤكدة تحفظ دون تخمين.",
         );
       } else if (intent.type === "presentation") {
         text = tr(
@@ -489,478 +491,128 @@ export function createAssistant(ctx) {
   }
 
   async function uploadDialog(p) {
-    let book = null,
-      grid = [],
-      headers = [],
-      data = [],
-      mapping = {},
-      prepared = null,
-      selection = 0,
-      fuzzyFields = [],
-      savedMatch = null,
-      autoRan = false;
-    const options = (items, value = "") =>
-      items
-        .map(
-          ([v, l]) =>
-            `<option value="${esc(v)}" ${String(v) === String(value) ? "selected" : ""}>${esc(l)}</option>`,
-        )
-        .join("");
-    const w = modal(
-      tr("Analyze a workbook", "تحليل ملف جداول"),
-      p.code + " · " + p.name,
-      `<div class="notice">${icon("shield")}<span>${tr("Local analysis only. Choose one table at a time. No model reads your file. Nothing is saved until you confirm the preview. A format you confirm is remembered and applied automatically on later uploads.", "تحليل محلي فقط. اختر جدولا واحدا كل مرة. لا يقرأ أي نموذج ملفك. لا يحفظ شيء حتى تأكيد المعاينة. أي تنسيق تؤكده يحفظ ويطبق تلقائيا في المرات التالية.")}</span></div><div class="file-drop"><h3>${tr("Choose Excel or CSV", "اختر Excel أو CSV")}</h3><input type="file" id="assistant-file" accept=".xlsx,.xls,.csv" aria-label="${tr("Workbook file", "ملف الجداول")}"><p>${tr("Up to 5 MB, 5,000 data rows and 100 columns per sheet. Tables only, not scanned pages or arbitrary report layouts.", "حتى 5 ميجابايت و5000 صف و100 عمود لكل ورقة. جداول فقط، وليس صورا ممسوحة أو تقارير غير منتظمة.")}</p></div><div id="assistant-workbook" hidden><div class="form-grid"><label class="field"><span>${tr("Worksheet", "ورقة العمل")}</span><select id="assistant-sheet"></select></label><label class="field"><span>${tr("Header row", "صف العناوين")}</span><input id="assistant-header" type="number" min="1" max="50" value="1"></label><label class="field"><span>${tr("Target register", "السجل المستهدف")}</span><select id="assistant-register">${options(
-        Object.keys(ctx.modules).map((k) => [k, ctx.mname(k)]),
-        "site_rfi",
-      )}</select></label><label class="field"><span>${tr("Text date format", "تنسيق التاريخ النصي")}</span><select id="assistant-date-mode">${options(
-        [
-          ["iso", tr("YYYY-MM-DD only", "YYYY-MM-DD فقط")],
-          ["dmy", tr("Day / month / year", "يوم / شهر / سنة")],
-          ["mdy", tr("Month / day / year", "شهر / يوم / سنة")],
-        ],
-      )}</select></label></div><div id="assistant-mapping"></div><div id="assistant-status-mapping"></div><div class="assistant-import-warning">${tr("Matched rows use reference + revision in this project/register. Mapped blank cells clear the saved value. Unmapped fields on existing records stay unchanged. No rows are deleted. Review the preview carefully.", "تطابق الصفوف بالمرجع والمراجعة داخل هذا المشروع والسجل. الخلايا الفارغة المربوطة تمسح القيمة المحفوظة. الحقول غير المربوطة تبقى كما هي في السجلات الموجودة. لا تحذف صفوف. راجع المعاينة جيدا.")}</div><button class="btn primary" type="button" id="assistant-analyze">${tr("Analyze and preview changes", "تحليل ومعاينة التغييرات")}</button></div><div id="assistant-import-preview" aria-live="polite"></div><div class="form-actions"><button type="button" class="btn" data-close>${tr("Cancel", "إلغاء")}</button><button type="submit" class="btn primary" id="assistant-commit" disabled>${tr("Confirm and save records", "تأكيد وحفظ السجلات")}</button></div>`,
-      async () => {
-        if (!ctx.admin())
-          throw Error(
-            tr("Administrator access required.", "صلاحية المسؤول مطلوبة."),
-          );
-        if (
-          !prepared ||
-          prepared.errors.length ||
-          !prepared.prepared.length ||
-          !$("#assistant-approval", w)?.checked
-        )
-          throw Error(
-            tr(
-              "Analyze the file and confirm the preview first.",
-              "حلل الملف وأكد المعاينة أولا.",
-            ),
-          );
-        const pid = p.id,
-          cat = $("#assistant-register", w).value,
-          items = prepared.prepared;
-        $$("input,select,button", w).forEach((x) => (x.disabled = true));
-        try {
-          const result = await check(
-            db.rpc("apply_assistant_import", { pid, cat, items }),
-          );
-          if (w.applied?.mapped?.reference)
-            formatStore.save(formatKey(w.applied.mapped), {
-              ...w.applied,
-              savedAt: new Date().toISOString(),
-              file: $("#assistant-file", w).files[0]?.name || "",
-            });
-          w.close();
-          await loadData();
-          store(pid).push({
-            role: "assistant",
-            text:
-              tr("Workbook import saved. ", "تم حفظ استيراد الملف. ") +
-              num(result.added) +
-              tr(" added, ", " مضاف، ") +
-              num(result.updated) +
-              tr(" updated. No rows deleted.", " محدث. لم تحذف صفوف."),
-            source:
-              p.code + " · " + ctx.mname(cat) + " · " + now() + " (Dubai)",
-          });
-          await ctx.render();
-          toast(tr("Import saved", "تم حفظ الاستيراد"));
-        } catch (e) {
-          prepared = null;
-          $("#assistant-import-preview", w).innerHTML =
-            `<div class="form-error">${esc(tr("Nothing was saved by this import. Analyze again before retrying. ", "لم يحفظ هذا الاستيراد أي شيء. حلل الملف مجددا قبل المحاولة. ") + e.message)}</div>`;
-          throw e;
-        } finally {
-          $$("input,select,button", w).forEach((x) => (x.disabled = false));
-          $("#assistant-commit", w).disabled = true;
-        }
-      },
-      true,
-    );
-    const invalidate = () => {
-      selection++;
-      prepared = null;
-      $("#assistant-commit", w).disabled = true;
-      $("#assistant-import-preview", w).innerHTML = "";
-    };
-    function stateChoices() {
-      const f =
-          mapping.state !== ""
-            ? "state"
-            : mapping.status !== ""
-              ? "status"
-              : null,
-        values = f
-          ? [
-              ...new Set(
-                data.map((r) => String(r[Number(mapping[f])] ?? "").trim()),
-              ),
-            ].sort()
-          : [];
-      $("#assistant-status-mapping", w).innerHTML = values.length
-        ? `<h3 class="assistant-step">${tr("Status interpretation, confirm each value", "تفسير الحالات، أكد كل قيمة")}</h3><p class="small muted">${tr("Suggestions are exact aliases, not AI decisions. Check the meaning in your source register.", "الاقتراحات تطابق أسماء معروفة وليست قرارات ذكاء اصطناعي. تحقق من المعنى في السجل الأصلي.")}</p><div class="assistant-map-grid">${values
-            .slice(0, 60)
-            .map(
-              (v, i) =>
-                `<label class="field"><span>${esc(v || tr("(blank)", "(فارغ)"))}</span><select data-status-index="${i}">${options([["", tr("Choose a state", "اختر الحالة")], ...Object.keys(stateLabels).map((k) => [k, label(k)])], w.savedStatusMap?.[v] || normalizeState(v) || "")}</select></label>`,
-            )
-            .join(
-              "",
-            )}</div>${values.length > 60 ? `<div class="form-error">${tr("More than 60 unique statuses. Clean this column before importing.", "أكثر من 60 حالة مختلفة. نظف العمود قبل الاستيراد.")}</div>` : ""}`
-        : "";
-      $$("[data-status-index]", w).forEach((s) => (s.onchange = invalidate));
-      w.statusValues = values;
+    let book, grid = [], headers = [], data = [], mapping = {}, prepared, busyImport = false, tables = [], skippedSheets = [];
+    let sheetName = '', headerRow = 0, dateMode = 'iso', savedMatch, fuzzy = [], dateUncertain = false;
+    const opts = (items, value = '') => items.map(([v,l]) => `<option value="${esc(v)}" ${String(v) === String(value) ? 'selected' : ''}>${esc(l)}</option>`).join('');
+    const w = modal(tr('Automatic workbook import', 'استيراد الملف تلقائيا'), p.code + ' · ' + p.name,
+      `<div class="notice">${icon('shield')}<span>${tr('Choose a file. The table, columns and values are detected, cleaned and saved automatically to this project. No mapping or confirmation is required. Existing records are never deleted. Files stay local during analysis.', 'اختر الملف فقط. يكتشف الجدول والأعمدة وينظف القيم ويحفظ تلقائيا لهذا المشروع دون مطابقة أو تأكيد. لا تحذف السجلات الموجودة. تحليل الملفات محلي.')}</span></div>
+      <div class="file-drop"><h3>${tr('Drop Excel or CSV here', 'اسحب Excel أو CSV هنا')}</h3><input type="file" id="assistant-file" accept=".xlsx,.xls,.csv" aria-label="${tr('Workbook file','ملف الجداول')}"><p>${tr('Up to 5 MB, 5,000 records per sheet, 20,000 per workbook, 100 populated columns. Register sheets are combined; summaries are excluded.', 'حتى 5 ميجابايت و5000 سجل للورقة و20000 للملف و100 عمود فعلي. تستورد أوراق السجلات معا وتستبعد الملخصات.')}</p></div>
+      <div id="assistant-import-preview" aria-live="polite"></div>
+      <details id="assistant-adjust" hidden><summary>${tr('Optional: adjust detection', 'اختياري: تعديل الاكتشاف')}</summary><div class="form-grid"><label class="field"><span>${tr('Worksheet','ورقة العمل')}</span><select id="assistant-sheet"></select></label><label class="field"><span>${tr('Header row','صف العناوين')}</span><input id="assistant-header" type="number" min="1" max="50"></label><label class="field"><span>${tr('Register','السجل')}</span><select id="assistant-register">${opts(Object.keys(ctx.modules).map(k => [k,ctx.mname(k)]),'site_rfi')}</select></label><label class="field"><span>${tr('Date order','ترتيب التاريخ')}</span><select id="assistant-date-mode">${opts([['iso',tr('Preserve ambiguous dates','حفظ التواريخ الملتبسة')],['dmy','DD/MM/YYYY'],['mdy','MM/DD/YYYY']])}</select></label></div><div id="assistant-mapping" class="assistant-map-grid"></div><button type="button" id="assistant-analyze" class="btn">${tr('Apply adjustments and retry','تطبيق التعديل وإعادة المحاولة')}</button></details><div class="form-actions"><button type="button" class="btn" data-close>${tr('Close','إغلاق')}</button></div>`, null, true);
+    const preview = $('#assistant-import-preview', w);
+    const fail = e => { preview.innerHTML = `<div class="form-error">${esc(tr('Nothing was saved. ', 'لم يتم حفظ أي شيء. ') + e.message)}</div>`; };
+    const gridFromSheet = sheetGrid;
+    function categoryFor(name, columns) {
+      const hint = (name + ' ' + ($('#assistant-file',w).files[0]?.name || '') + ' ' + columns.join(' ')).toLowerCase();
+      const candidates = [ [/\bncr\b|\bcar\b|non.?conform/i,'findings'], [/\bsmr\b|material/i,'smr'], [/vendor.*document/i,'vdocs'], [/vendor.*rfi|vendor.*inspection/i,'vendor_rfi'], [/punch/i,'punch'], [/test.?pack/i,'test_pack'], [/dossier/i,'dossier'], [/\bwps\b|welding procedure/i,'wps'], [/welder/i,'welders'], [/quality document|document register|submittal/i,'docs'], [/action tracker/i,'actions'], [/\bwir\b|\brfi\b|inspection request/i,'site_rfi'] ];
+      for (const [re,key] of candidates) if (re.test(hint) && ctx.modules[key]) return key;
+      return null;
     }
-    function renderMap() {
-      invalidate();
-      data = [];
-      const start = Number($("#assistant-header", w).value) - 1;
-      if (!Number.isInteger(start) || start < 0 || start > 49)
-        throw Error(
-          tr("Header row must be 1 to 50.", "صف العناوين من 1 إلى 50."),
-        );
-      headers = (grid[start] || []).map(
-        (v, i) => String(v ?? "").trim() || tr("Column ", "عمود ") + (i + 1),
-      );
-      if (!headers.length)
-        throw Error(
-          tr("The selected header row is empty.", "صف العناوين المختار فارغ."),
-        );
-      if (headers.length > 100)
-        throw Error(
-          tr("Use at most 100 columns.", "استخدم 100 عمود كحد أقصى."),
-        );
-      data = grid
-        .slice(start + 1)
-        .filter((r) => r.some((v) => String(v ?? "").trim()));
-      if (data.length > 5000)
-        throw Error(
-          tr("Use at most 5,000 data rows.", "استخدم 5000 صف بيانات كحد أقصى."),
-        );
-      if (
-        data.some((r) =>
-          r.some((v) => typeof v === "string" && v.length > 5000),
-        )
-      )
-        throw Error(
-          tr(
-            "A cell exceeds 5,000 characters. Split or shorten it.",
-            "تتجاوز خلية 5000 حرف. اختصرها أو قسمها.",
-          ),
-        );
-      const det = suggestDetailed(headers);
-      mapping = det.mapping;
-      fuzzyFields = det.fuzzy;
-      const dm = detectDateMode(data, mapping);
-      if (dm) $("#assistant-date-mode", w).value = dm;
-      savedMatch = matchSavedFormat(headers, Object.values(formatStore.all()));
-      let formatNote = "";
-      if (savedMatch) {
-        mapping = { ...mapping, ...savedMatch.mapping };
-        fuzzyFields = [];
-        const e = savedMatch.entry;
-        if (e.dateMode) $("#assistant-date-mode", w).value = e.dateMode;
-        if (e.category && ctx.modules[e.category])
-          $("#assistant-register", w).value = e.category;
-        w.savedStatusMap = e.statusMap || null;
-        formatNote = `<div class="notice">${icon("check")}<span>${tr("Known format recognized from ", "تم التعرف على تنسيق معروف من ") + esc(e.file || tr("a previous upload", "رفع سابق")) + ". " + tr("Your saved column mapping, date format and status meanings are applied. Review the summary and confirm.", "طبقت مطابقة الأعمدة وتنسيق التاريخ ومعاني الحالات المحفوظة. راجع الملخص وأكد.")}</span></div>`;
-      } else w.savedStatusMap = null;
-      const unmappedCols = headers.filter(
-        (_, i) => !Object.values(mapping).includes(String(i)),
-      );
-      const unmappedNote = unmappedCols.length
-        ? `<p class="small muted">${esc(tr("Not matched to a register field, kept as extra fields: ", "غير مربوطة بحقل وتبقى كحقول إضافية: ") + unmappedCols.slice(0, 12).join(", ") + (unmappedCols.length > 12 ? "…" : ""))}</p>`
-        : "";
-      $("#assistant-mapping", w).innerHTML =
-        formatNote +
-        `<div class="section-head assistant-step"><h3>${tr("Map source columns", "مطابقة أعمدة المصدر")}</h3><span class="pill blue">${num(data.length)} ${tr("nonblank rows", "صف غير فارغ")}</span></div><p class="small muted">${tr("Reference is required. Description is required for new records. Map revision when the source has revisions.", "المرجع مطلوب. الوصف مطلوب للسجلات الجديدة. اربط المراجعة إذا كانت موجودة في المصدر.")}</p><div class="assistant-map-grid">${fields.map((f) => `<label class="field"><span>${label(f)}${fuzzyFields.includes(f) ? ` <small class="muted">${tr("(auto)", "(تلقائي)")}</small>` : ""}</span><select data-map-field="${f}">${options([["", tr("Not mapped, keep existing", "غير مربوط، احتفظ بالمحفوظ")], ...headers.map((h, i) => [String(i), String(i + 1) + ". " + h])], mapping[f])}</select></label>`).join("")}</div>${unmappedNote}<details class="assistant-source-preview"><summary>${tr("View first 5 source rows", "عرض أول 5 صفوف من المصدر")}</summary><div class="table-wrap"><table><thead><tr>${headers.map((h) => `<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${data
-          .slice(0, 5)
-          .map(
-            (r) =>
-              `<tr>${headers.map((_, i) => `<td>${esc(String(r[i] ?? "").slice(0, 140))}</td>`).join("")}</tr>`,
-          )
-          .join("")}</tbody></table></div></details>`;
-      $$("[data-map-field]", w).forEach(
-        (s) =>
-          (s.onchange = () => {
-            mapping[s.dataset.mapField] = s.value;
-            invalidate();
-            stateChoices();
-          }),
-      );
-      stateChoices();
-      invalidate();
-    }
-    function gridFromSheet(sheet, XLSX) {
-      const range = XLSX.utils.decode_range(
-        sheet["!fullref"] || sheet["!ref"] || "A1",
-      );
-      if (range.e.r > 5049 || range.e.c > 99)
-        throw Error(
-          tr(
-            "Sheet is too large. Keep at most 5,000 data rows, 50 header rows and 100 columns.",
-            "الورقة كبيرة. الحد 5000 صف بيانات و50 صف عناوين و100 عمود.",
-          ),
-        );
-      const g = XLSX.utils.sheet_to_json(sheet, {
-        header: 1,
-        range: 0,
-        defval: "",
-        blankrows: true,
-        raw: true,
+    function setupDetection() {
+      headerRow = Number($('#assistant-header',w).value) - 1;
+      if (!Number.isInteger(headerRow) || headerRow < 0 || headerRow > 49) throw Error(tr('Header row must be 1 to 50.','صف العناوين من 1 إلى 50.'));
+      const width = Math.max(...grid.slice(headerRow,headerRow + 10).map(r => r.length));
+      headers = Array.from({length:width},(_,i) => String(grid[headerRow]?.[i] ?? '').replace(/\s+/g,' ').trim() || 'Column ' + (i+1));
+      const detection = inferMapping(headers,grid.slice(headerRow+1));
+      mapping = detection.mapping; fuzzy = detection.fuzzy;
+      data = grid.slice(headerRow+1).filter(r => r.some(v => String(v ?? '').trim()));
+      // Repeated page headers and footer totals are presentation rows, not records.
+      data = data.filter(r => {
+        const ref = String(r[Number(mapping.reference)] ?? '').trim();
+        return normHeader(ref) !== normHeader(headers[Number(mapping.reference)]) && !/^(grand\s+total|total|subtotal|page\s+\d+)$/i.test(ref);
       });
-      g.forEach((row, r) =>
-        row.forEach((v, c) => {
-          const cell = sheet[XLSX.utils.encode_cell({ r, c })];
-          if (cell?.t === "n" && cell.w != null) row[c] = cell.w;
-        }),
-      );
-      return g;
+      if (data.length > 5000) throw Error(tr('Use at most 5,000 data rows.','استخدم 5000 صف بيانات كحد أقصى.'));
+      if (data.some(r => r.some(v => typeof v === 'string' && v.length > 5000))) throw Error(tr('A cell exceeds 5,000 characters.','تتجاوز خلية 5000 حرف.'));
+      savedMatch = matchSavedFormat(headers,Object.values(formatStore.all()));
+      if (savedMatch) mapping = {...mapping,...savedMatch.mapping};
+      dateMode = detectDateMode(data,mapping) || savedMatch?.entry.dateMode || 'iso';
+      dateUncertain = dateMode === 'iso' && !detectDateMode(data,mapping) && data.some(r => [mapping.due_date,mapping.occurred_on].some(c => c !== '' && /^\d{1,2}[/.\-]\d{1,2}[/.\-]\d{4}$/.test(String(r[Number(c)] ?? ''))));
+      $('#assistant-date-mode',w).value = dateMode;
+      $('#assistant-register',w).value = categoryFor(sheetName,headers) || (savedMatch?.entry.category && ctx.modules[savedMatch.entry.category] ? savedMatch.entry.category : 'site_rfi');
+      paintMapping();
     }
-    async function readSheet() {
-      invalidate();
-      grid = [];
-      data = [];
-      savedMatch = null;
-      w.savedStatusMap = null;
-      const name = $("#assistant-sheet", w).value,
-        sheet = book.Sheets[name],
-        XLSX = await import("xlsx");
-      grid = gridFromSheet(sheet, XLSX);
-      $("#assistant-header", w).value = String(detectHeaderRow(grid) + 1);
-      renderMap();
-      if (savedMatch && !autoRan) {
-        autoRan = true;
-        await runAnalyze($("#assistant-analyze", w));
-      }
+    const normHeader = v => String(v ?? '').toLowerCase().replace(/\W/g,'');
+    function paintMapping() {
+      $('#assistant-mapping',w).innerHTML = fields.map(f => `<label class="field"><span>${label(f)}</span><select data-map-field="${f}">${opts([['',tr('Preserve existing','الاحتفاظ بالمحفوظ')],...headers.map((h,i) => [String(i),h])],mapping[f])}</select></label>`).join('');
     }
-    const fail = (e) => {
-      $("#assistant-import-preview", w).innerHTML =
-        `<div class="form-error">${esc(e.message)}</div>`;
-      $("#assistant-commit", w).disabled = true;
-    };
-    $("#assistant-file", w).onchange = async (e) => {
-      invalidate();
-      book = null;
-      $("#assistant-workbook", w).hidden = true;
-      const f = e.target.files[0];
-      if (!f) return;
+    async function processFile(adjusted = false) {
+      if (busyImport) return;
+      busyImport=true; prepared=null;
+      $('#assistant-file',w).disabled=true; $('#assistant-analyze',w).disabled=true;
+      preview.innerHTML=`<div class="notice">${tr('Analyzing, cleaning and updating the dashboard…','جار التحليل والتنظيف وتحديث لوحة المتابعة…')}</div>`;
       try {
-        if (!/\.(xlsx|xls|csv)$/i.test(f.name))
-          throw Error(
-            tr("Choose .xlsx, .xls or .csv.", "اختر .xlsx أو .xls أو .csv."),
-          );
-        if (f.size > 5 * 1024 * 1024)
-          throw Error(tr("File exceeds 5 MB.", "يتجاوز الملف 5 ميجابايت."));
-        const XLSX = await import("xlsx");
-        book = XLSX.read(await f.arrayBuffer(), {
-          type: "array",
-          raw: true,
-          cellDates: true,
-          sheetRows: 5051,
-        });
-        $("#assistant-sheet", w).innerHTML = options(
-          book.SheetNames.map((n) => [n, n]),
-        );
-        autoRan = false;
-        try {
-          const X = await import("xlsx");
-          let bestName = book.SheetNames[0],
-            bestSheetScore = 1;
-          for (const nm of book.SheetNames) {
-            const sc = headerScore(
-              gridFromSheet(book.Sheets[nm], X).slice(0, 12),
-            ).score;
-            if (sc > bestSheetScore) {
-              bestSheetScore = sc;
-              bestName = nm;
+        const active = adjusted ? [{sheetName,headerRow,headers,rows:data,mapping,dateMode,omitted:0,duplicates:0,continued:0,missingTitles:0}] : tables;
+        const imports=[],reports=[]; let warnings=0,dates=0,statuses=0,trimmed=0,omitted=0,duplicates=0,continued=0,missingTitles=0;
+        for(const table of active) {
+          preview.innerHTML=`<div class="notice">${esc(tr('Processing ','جار معالجة ') + table.sheetName)}</div>`;
+          const match=matchSavedFormat(table.headers,Object.values(formatStore.all()));
+          const map=match ? {...table.mapping,...match.mapping} : table.mapping;
+          const mode=table.dateMode !== 'iso' ? table.dateMode : match?.entry.dateMode || table.dateMode;
+          const cat=adjusted ? $('#assistant-register',w).value : categoryFor(table.sheetName,table.headers) || match?.entry.category || 'site_rfi';
+          if(!table.rows.length || map.reference==='') throw Error(tr('No reliable record references found.','لم توجد مراجع سجلات موثوقة.'));
+          const refs=[...new Set(table.rows.map(r=>String(r[Number(map.reference)]??'').replace(/\s+/g,' ').trim()).filter(Boolean))], existing=[];
+          for(let i=0;i<refs.length;i+=75) {
+            let offset=0;
+            while(true) {
+              const chunk=await check(db.from('records').select('reference,title,revision,status,state,owner,discipline,due_date,occurred_on,is_current,payload,version').eq('project_id',p.id).eq('category',cat).in('reference',refs.slice(i,i+75)).order('id').range(offset,offset+999));
+              existing.push(...chunk); if(chunk.length<1000) break; offset+=1000;
+              if(offset>10000) throw Error(tr('Too many revisions.','مراجعات كثيرة جدا.'));
             }
           }
-          $("#assistant-sheet", w).value = bestName;
-        } catch {
-          /* keep the first sheet */
+          const result=analyzeRows({rows:table.rows,headers:table.headers,mapping:map,existing,dateMode:mode,stateMap:match?.entry.statusMap||{},fileName:$('#assistant-file',w).files[0].name,sheetName:table.sheetName,automatic:true});
+          if(result.errors.length) throw Error(table.sheetName + ': ' + result.errors.slice(0,6).map(e=>tr('Row ','صف ')+e.row+': '+errorText(e.message)).join('\n'));
+          if(!result.prepared.length) continue;
+          imports.push({cat,items:result.prepared});
+          const cl=result.cleaning;warnings+=cl.warnings.length;dates+=cl.dates;statuses+=cl.statuses;trimmed+=cl.trimmed;
+          omitted+=table.omitted||0;duplicates+=table.duplicates||0;continued+=table.continued||0;missingTitles+=table.missingTitles||0;
+          reports.push({...table,map,mode,cat});
         }
-        await readSheet();
-        $("#assistant-workbook", w).hidden = false;
-      } catch (e) {
-        fail(e);
-      }
-    };
-    $("#assistant-sheet", w).onchange = () => readSheet().catch(fail);
-    $("#assistant-header", w).onchange = () => {
-      try {
-        renderMap();
-      } catch (e) {
-        invalidate();
-        fail(e);
-      }
-    };
-    $("#assistant-date-mode", w).onchange = invalidate;
-    $("#assistant-register", w).onchange = invalidate;
-    async function runAnalyze(b) {
-      invalidate();
-      const ticket = selection;
-      b.disabled = true;
-      try {
-        if (!book || !data.length)
-          throw Error(tr("No data rows found.", "لم توجد صفوف بيانات."));
-        if (w.statusValues.length > 60)
-          throw Error(
-            tr(
-              "Too many distinct source statuses.",
-              "عدد الحالات المختلفة كبير جدا.",
-            ),
-          );
-        if (!ctx.admin()) {
-          /* Viewers may analyze locally; read requests still obey RLS. */
+        if(!imports.length) throw Error(tr('No importable register tables found.','لم توجد جداول سجلات قابلة للاستيراد.'));
+        if(!ctx.admin()) {
+          preview.innerHTML=`<div class="notice">${tr('Read-only analysis. An administrator must save the file. Detected records: ','تحليل للعرض فقط. يلزم مسؤول لحفظ الملف. السجلات المكتشفة: ')}${num(imports.reduce((n,x)=>n+x.items.length,0))}</div>`;
+          return;
         }
-        const cat = $("#assistant-register", w).value,
-          refs = [
-            ...new Set(
-              data
-                .map((r) => String(r[Number(mapping.reference)] ?? "").trim())
-                .filter(Boolean),
-            ),
-          ],
-          existing = [];
-        for (let i = 0; i < refs.length; i += 75) {
-          let offset = 0;
-          while (true) {
-            const chunk = await check(
-              db
-                .from("records")
-                .select(
-                  "reference,title,revision,status,state,owner,discipline,due_date,occurred_on,is_current,payload,version",
-                )
-                .eq("project_id", p.id)
-                .eq("category", cat)
-                .in("reference", refs.slice(i, i + 75))
-                .order("id")
-                .range(offset, offset + 999),
-            );
-            existing.push(...chunk);
-            if (chunk.length < 1000) break;
-            offset += 1000;
-            if (offset > 10000)
-              throw Error(
-                tr(
-                  "Too many revisions. Use a smaller file.",
-                  "مراجعات كثيرة جدا. استخدم ملفا أصغر.",
-                ),
-              );
-          }
+        preview.innerHTML=`<div class="notice">${tr('Saving all detected register sheets together…','جار حفظ كل أوراق السجلات معا…')}</div>`;
+        const result=await check(db.rpc('apply_assistant_workbook',{pid:p.id,imports}));
+        for(const t of reports) {
+          const mapped=Object.fromEntries(fields.filter(f=>t.map[f]!=='').map(f=>[f,t.headers[Number(t.map[f])]]));
+          formatStore.save(formatKey(mapped),{mapped,dateMode:t.mode,category:t.cat,statusMap:{},savedAt:new Date().toISOString(),file:$('#assistant-file',w).files[0].name});
         }
-        if (ticket !== selection || !w.isConnected) return;
-        const stateMap = Object.fromEntries(
-          $$("[data-status-index]", w).map((s) => [
-            w.statusValues[Number(s.dataset.statusIndex)],
-            s.value,
-          ]),
-        );
-        prepared = analyzeRows({
-          rows: data,
-          headers,
-          mapping,
-          existing,
-          dateMode: $("#assistant-date-mode", w).value,
-          stateMap,
-          fileName: $("#assistant-file", w).files[0].name,
-          sheetName: $("#assistant-sheet", w).value,
-        });
-        w.applied = {
-          mapped: Object.fromEntries(
-            fields
-              .filter((f) => mapping[f] !== "" && mapping[f] != null)
-              .map((f) => [f, headers[Number(mapping[f])]]),
-          ),
-          dateMode: $("#assistant-date-mode", w).value,
-          category: cat,
-          statusMap: Object.fromEntries(
-            Object.entries(stateMap).filter(([, v]) => v),
-          ),
-        };
-        const { errors, added, updated } = prepared;
-        const cl = prepared.cleaning || { dates: 0, statuses: 0, trimmed: 0 },
-          cleanBits = [];
-        if (cl.dates)
-          cleanBits.push(num(cl.dates) + " " + tr("dates standardized", "تاريخ موحد"));
-        if (cl.statuses)
-          cleanBits.push(num(cl.statuses) + " " + tr("statuses matched", "حالة مطابقة"));
-        if (cl.trimmed)
-          cleanBits.push(num(cl.trimmed) + " " + tr("cells trimmed", "خلية منظفة"));
-        const cleanLine =
-          (savedMatch ? tr("Known format applied. ", "تم تطبيق تنسيق معروف. ") : "") +
-          (cleanBits.length
-            ? tr("Cleaned automatically: ", "نظف تلقائيا: ") + cleanBits.join(" · ")
-            : "");
-        $("#assistant-import-preview", w).innerHTML =
-          `<div class="soft-divider"></div><h3>${tr("Review before saving", "راجع قبل الحفظ")}</h3><div class="assistant-preview-counts"><span class="pill green">${num(added)} ${tr("new", "جديد")}</span><span class="pill blue">${num(updated)} ${tr("updates", "تحديث")}</span><span class="pill ${errors.length ? "red" : ""}">${num(errors.length)} ${tr("errors", "خطأ")}</span><span class="pill">0 ${tr("deletions", "حذف")}</span></div><p class="small">${esc(p.code)} · ${esc(ctx.mname(cat))}</p>${cleanLine ? `<p class="small muted">${esc(cleanLine)}</p>` : ""}${
-            errors.length
-              ? `<div class="form-error">${errors
-                  .slice(0, 12)
-                  .map((e) =>
-                    esc(
-                      (e.row
-                        ? tr("Data row ", "صف بيانات ") + e.row + ": "
-                        : "") + errorText(e.message),
-                    ),
-                  )
-                  .join("<br>")}</div>`
-              : ""
-          }<div class="table-wrap"><table><thead><tr>${[tr("Change", "التغيير"), label("reference"), label("revision"), label("title"), label("state"), label("owner")].map((h) => `<th>${h}</th>`).join("")}</tr></thead><tbody>${prepared.prepared
-            .slice(0, 12)
-            .map(
-              (r) =>
-                `<tr><td>${r.expected_version == null ? tr("New", "جديد") : tr("Update", "تحديث")}</td><td>${esc(r.reference)}</td><td>${esc(r.revision || "-")}</td><td>${esc(r.title.slice(0, 130))}</td><td>${label(r.state)}</td><td>${esc(r.owner || "-")}</td></tr>`,
-            )
-            .join(
-              "",
-            )}</tbody></table></div><p class="small muted">${tr("First 12 proposed rows shown. All rows are validated. Extra source columns are kept in each record's additional fields.", "تعرض أول 12 صفا مقترحا. تتحقق كل الصفوف. تحفظ أعمدة المصدر الإضافية في الحقول الإضافية لكل سجل.")}</p><button type="button" id="assistant-review-all" class="btn">${icon("download")}${tr("Download all before / after changes (CSV)", "تحميل كل القيم قبل وبعد (CSV)")}</button>${ctx.admin() ? `<label class="check-inline assistant-approval"><input type="checkbox" id="assistant-approval" ${errors.length ? "disabled" : ""}>${tr("I reviewed the target register, column mappings and proposed changes. Save these records.", "راجعت السجل المستهدف ومطابقة الأعمدة والتغييرات المقترحة. احفظ هذه السجلات.")}</label>` : `<div class="notice">${tr("Read-only analysis. Ask your administrator to save this import.", "تحليل للعرض فقط. اطلب من المسؤول حفظ الاستيراد.")}</div>`}`;
-        $("#assistant-review-all", w).onclick = () => {
-          const detail = fields.filter(
-              (f) => !["reference", "revision"].includes(f),
-            ),
-            cols = [
-              "change",
-              "reference",
-              "revision",
-              ...detail.flatMap((f) => [f + "_before", f + "_after"]),
-            ],
-            quote = (v) =>
-              '"' +
-              String(v ?? "")
-                .replace(/^[=+@\-\t\r]/, "'" + "$&")
-                .replaceAll('"', '""') +
-              '"',
-            out = [
-              cols.map(quote).join(","),
-              ...prepared.changes.map((c) =>
-                [
-                  c.change,
-                  c.reference,
-                  c.revision,
-                  ...detail.flatMap((f) => [c.before[f], c.after[f]]),
-                ]
-                  .map(quote)
-                  .join(","),
-              ),
-            ].join("\r\n");
-          ctx.download("qualityhub-change-review.csv", "\ufeff" + out);
-        };
-        $("#assistant-approval", w)?.addEventListener("change", (e) => {
-          $("#assistant-commit", w).disabled =
-            !e.target.checked ||
-            !!prepared?.errors.length ||
-            !prepared?.prepared.length;
-        });
-      } catch (e) {
-        prepared = null;
-        fail(e);
-      } finally {
-        b.disabled = false;
-      }
+        const summary=tr('File processed and dashboard updated automatically. ','تم تحليل الملف وتحديث لوحة المتابعة تلقائيا. ')+num(result.added)+tr(' added, ',' مضاف، ')+num(result.updated)+tr(' updated. No rows deleted.',' محدث. لم تحذف صفوف.')+'\n'+reports.map(t=>t.sheetName+tr(' · header row ',' · صف العناوين ')+(t.headerRow+1)+' · '+num(t.rows.length)).join('\n')+'\n'+num(trimmed)+tr(' cells cleaned · ',' خلية منظفة · ')+num(dates)+tr(' dates standardized · ',' تاريخ موحد · ')+num(statuses)+tr(' statuses normalized.',' حالة موحدة.')+(continued?'\n'+num(continued)+tr(' revision continuation references restored.',' مرجع مراجعة مستعاد من صف الاستكمال.'):'')+(duplicates?'\n'+num(duplicates)+tr(' duplicate reference/revision rows consolidated (last source row retained).',' صف مكرر دمج مع الاحتفاظ بآخر صف في المصدر.'):'')+(missingTitles?'\n'+num(missingTitles)+tr(' missing descriptions inherited from the same reference or labeled as not provided.',' وصف ناقص استكمل من نفس المرجع أو علم بأنه غير متاح.'):'')+(warnings?'\n'+num(warnings)+tr(' uncertain values preserved in source fields, not guessed.',' قيمة غير مؤكدة محفوظة في حقول المصدر دون تخمين.'):'')+(omitted?'\n'+num(omitted)+tr(' source rows without a usable reference were not imported.',' صف مصدر دون مرجع صالح لم يستورد.'):'')+(skippedSheets.length?'\n'+tr('Summary/non-register sheets excluded to avoid double counting: ','استبعدت أوراق الملخص لتجنب العد المزدوج: ')+skippedSheets.join(', '):'');
+        w.close();await loadData();store(p.id).push({role:'assistant',text:summary,source:p.code+' · '+now()+' (Dubai)'});await ctx.render();toast(tr('Import saved automatically','تم الاستيراد والحفظ تلقائيا'));
+      } catch(e) {fail(e);}
+      finally {busyImport=false;$('#assistant-file',w).disabled=false;$('#assistant-analyze',w).disabled=false;}
     }
-    $("#assistant-analyze", w).onclick = (e) => runAnalyze(e.currentTarget);
+    $('#assistant-file',w).onchange = async e => {
+      if (busyImport) return;
+      const file=e.target.files[0]; if (!file) return;
+      try {
+        if (!/\.(xlsx|xls|csv)$/i.test(file.name)) throw Error(tr('Choose .xlsx, .xls or .csv.','اختر .xlsx أو .xls أو .csv.'));
+        if (file.size>5*1024*1024) throw Error(tr('File exceeds 5 MB.','يتجاوز الملف 5 ميجابايت.'));
+        const X=await import('xlsx');
+        book=X.read(await file.arrayBuffer(),{type:'array',raw:true,cellDates:true,sheetRows:5051});
+        $('#assistant-sheet',w).innerHTML=opts(book.SheetNames.map(n=>[n,n]));
+        const parsed=workbookTables(book,X);
+        tables=parsed.tables;skippedSheets=parsed.skipped;
+        if(!tables.length) throw Error(tr('No register table with references and descriptions was found.','لم يوجد جدول سجلات يحتوي على مراجع وأوصاف.'));
+        const first=tables[0];
+        sheetName=first.sheetName;headerRow=first.headerRow;headers=first.headers;data=first.rows;mapping=first.mapping;dateMode=first.dateMode;
+        grid=gridFromSheet(book.Sheets[sheetName],X);
+        $('#assistant-sheet',w).value=sheetName;
+        $('#assistant-header',w).value=String(headerRow+1);
+        $('#assistant-date-mode',w).value=dateMode;
+        $('#assistant-register',w).value=categoryFor(sheetName,headers)||'site_rfi';
+        paintMapping();$('#assistant-adjust',w).hidden=false;
+        await processFile();
+      } catch(e) { fail(e); }
+    };
+    $('#assistant-sheet',w).onchange=async()=>{ try {sheetName=$('#assistant-sheet',w).value;grid=gridFromSheet(book.Sheets[sheetName],await import('xlsx'));$('#assistant-header',w).value=String(detectHeaderRow(grid)+1);setupDetection();}catch(e){fail(e);} };
+    $('#assistant-header',w).onchange=()=>{try{setupDetection();}catch(e){fail(e);}};
+    $('#assistant-analyze',w).onclick=async()=>{
+      $$('[data-map-field]',w).forEach(s=>mapping[s.dataset.mapField]=s.value);
+      dateMode=$('#assistant-date-mode',w).value;
+      await processFile(true);
+    };
   }
   return {
     html,
