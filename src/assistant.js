@@ -491,7 +491,7 @@ export function createAssistant(ctx) {
   }
 
   async function uploadDialog(p) {
-    let book, grid = [], headers = [], data = [], mapping = {}, prepared, busyImport = false, tables = [], skippedSheets = [];
+    let book, grid = [], headers = [], data = [], mapping = {}, prepared, busyImport = false, tables = [], skippedSheets = [], summaryCounts = [];
     let sheetName = '', headerRow = 0, dateMode = 'iso', savedMatch, fuzzy = [], dateUncertain = false;
     const opts = (items, value = '') => items.map(([v,l]) => `<option value="${esc(v)}" ${String(v) === String(value) ? 'selected' : ''}>${esc(l)}</option>`).join('');
     const w = modal(tr('Automatic workbook import', 'استيراد الملف تلقائيا'), p.code + ' · ' + p.name,
@@ -580,7 +580,9 @@ export function createAssistant(ctx) {
           const mapped=Object.fromEntries(fields.filter(f=>t.map[f]!=='').map(f=>[f,t.headers[Number(t.map[f])]]));
           formatStore.save(formatKey(mapped),{mapped,dateMode:t.mode,category:t.cat,statusMap:{},savedAt:new Date().toISOString(),file:$('#assistant-file',w).files[0].name});
         }
-        const summary=tr('File processed and dashboard updated automatically. ','تم تحليل الملف وتحديث لوحة المتابعة تلقائيا. ')+num(result.added)+tr(' added, ',' مضاف، ')+num(result.updated)+tr(' updated. No rows deleted.',' محدث. لم تحذف صفوف.')+'\n'+reports.map(t=>t.sheetName+tr(' · header row ',' · صف العناوين ')+(t.headerRow+1)+' · '+num(t.rows.length)).join('\n')+'\n'+num(trimmed)+tr(' cells cleaned · ',' خلية منظفة · ')+num(dates)+tr(' dates standardized · ',' تاريخ موحد · ')+num(statuses)+tr(' statuses normalized.',' حالة موحدة.')+(continued?'\n'+num(continued)+tr(' revision continuation references restored.',' مرجع مراجعة مستعاد من صف الاستكمال.'):'')+(duplicates?'\n'+num(duplicates)+tr(' duplicate reference/revision rows consolidated (last source row retained).',' صف مكرر دمج مع الاحتفاظ بآخر صف في المصدر.'):'')+(missingTitles?'\n'+num(missingTitles)+tr(' missing descriptions inherited from the same reference or labeled as not provided.',' وصف ناقص استكمل من نفس المرجع أو علم بأنه غير متاح.'):'')+(warnings?'\n'+num(warnings)+tr(' uncertain values preserved in source fields, not guessed.',' قيمة غير مؤكدة محفوظة في حقول المصدر دون تخمين.'):'')+(omitted?'\n'+num(omitted)+tr(' source rows without a usable reference were not imported.',' صف مصدر دون مرجع صالح لم يستورد.'):'')+(skippedSheets.length?'\n'+tr('Summary/non-register sheets excluded to avoid double counting: ','استبعدت أوراق الملخص لتجنب العد المزدوج: ')+skippedSheets.join(', '):'');
+        let summary=tr('File processed and dashboard updated automatically. ','تم تحليل الملف وتحديث لوحة المتابعة تلقائيا. ')+num(result.added)+tr(' added, ',' مضاف، ')+num(result.updated)+tr(' updated. No rows deleted.',' محدث. لم تحذف صفوف.')+'\n'+reports.map(t=>t.sheetName+tr(' · header row ',' · صف العناوين ')+(t.headerRow+1)+' · '+num(t.rows.length)).join('\n')+'\n'+num(trimmed)+tr(' cells cleaned · ',' خلية منظفة · ')+num(dates)+tr(' dates standardized · ',' تاريخ موحد · ')+num(statuses)+tr(' statuses normalized.',' حالة موحدة.')+(continued?'\n'+num(continued)+tr(' revision continuation references restored.',' مرجع مراجعة مستعاد من صف الاستكمال.'):'')+(duplicates?'\n'+num(duplicates)+tr(' duplicate reference/revision rows consolidated (last source row retained).',' صف مكرر دمج مع الاحتفاظ بآخر صف في المصدر.'):'')+(missingTitles?'\n'+num(missingTitles)+tr(' missing descriptions inherited from the same reference or labeled as not provided.',' وصف ناقص استكمل من نفس المرجع أو علم بأنه غير متاح.'):'')+(warnings?'\n'+num(warnings)+tr(' uncertain values preserved in source fields, not guessed.',' قيمة غير مؤكدة محفوظة في حقول المصدر دون تخمين.'):'')+(omitted?'\n'+num(omitted)+tr(' source rows without a usable reference were not imported.',' صف مصدر دون مرجع صالح لم يستورد.'):'')+(skippedSheets.length?'\n'+tr('Summary/non-register sheets excluded to avoid double counting: ','استبعدت أوراق الملخص لتجنب العد المزدوج: ')+skippedSheets.join(', '):'');
+        const sourceCurrent=imports.reduce((n,x)=>n+x.items.filter(r=>r.is_current).length,0);
+        for(const count of summaryCounts) if(count.total!==sourceCurrent) summary+='\n'+tr('Source summary reports ','ملخص المصدر يعرض ')+num(count.total)+tr('; detailed logs contain ','؛ السجلات التفصيلية تحتوي على ')+num(sourceCurrent)+tr(' current references. The dashboard uses the detailed logs.',' مرجعا حاليا. لوحة المتابعة تستخدم السجلات التفصيلية.');
         w.close();await loadData();store(p.id).push({role:'assistant',text:summary,source:p.code+' · '+now()+' (Dubai)'});await ctx.render();toast(tr('Import saved automatically','تم الاستيراد والحفظ تلقائيا'));
       } catch(e) {fail(e);}
       finally {busyImport=false;$('#assistant-file',w).disabled=false;$('#assistant-analyze',w).disabled=false;}
@@ -595,7 +597,7 @@ export function createAssistant(ctx) {
         book=X.read(await file.arrayBuffer(),{type:'array',raw:true,cellDates:true,sheetRows:5051});
         $('#assistant-sheet',w).innerHTML=opts(book.SheetNames.map(n=>[n,n]));
         const parsed=workbookTables(book,X);
-        tables=parsed.tables;skippedSheets=parsed.skipped;
+        tables=parsed.tables;skippedSheets=parsed.skipped;summaryCounts=parsed.summaryCounts;
         if(!tables.length) throw Error(tr('No register table with references and descriptions was found.','لم يوجد جدول سجلات يحتوي على مراجع وأوصاف.'));
         const first=tables[0];
         sheetName=first.sheetName;headerRow=first.headerRow;headers=first.headers;data=first.rows;mapping=first.mapping;dateMode=first.dateMode;

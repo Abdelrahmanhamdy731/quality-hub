@@ -32,14 +32,25 @@ export function canonicalReference(value, revision = '') {
   return ref;
 }
 export function workbookTables(book,X) {
-  const tables=[], skipped=[];
+  const tables=[], skipped=[], summaryCounts=[];
   for(const sheetName of book.SheetNames) {
     const grid=sheetGrid(book.Sheets[sheetName],X), detection=headerScore(grid);
     const headerRow=detection.row;
     const width=Math.max(...grid.slice(headerRow,headerRow+10).map(r=>r.length),0);
     const headers=Array.from({length:width},(_,i)=>text(grid[headerRow]?.[i]) || 'Column '+(i+1));
     const found=inferMapping(headers,grid.slice(headerRow+1)),mapping=found.mapping;
-    if(mapping.reference==='' || mapping.title==='') { skipped.push(sheetName); continue; }
+    if(mapping.reference==='' || mapping.title==='') {
+      skipped.push(sheetName);
+      for(let r=0;r<Math.min(50,grid.length);r++) {
+        const col=grid[r].findIndex(v=>/total\s+submitted\s+rfi/i.test(text(v)));
+        if(col<0) continue;
+        const total=grid.slice(r+1).find(row=>row.some(v=>/^total\s*\(all\s+discipline\)/i.test(text(v))));
+        const totalValue=Number(text(total?.[col]).replace(/,/g,''));
+        if(total && Number.isFinite(totalValue)) summaryCounts.push({sheet:sheetName,total:totalValue});
+        break;
+      }
+      continue;
+    }
     const rows=[],byKey=new Map();let omitted=0,duplicates=0,continued=0,missingTitles=0;
     let lastRef='',lastTitle='',lastRevision='',lastSerial='';
     for(const [offset,original] of grid.slice(headerRow+1).entries()) {
@@ -71,5 +82,5 @@ export function workbookTables(book,X) {
     if(rows.some(r=>r.some(v=>typeof v==='string'&&v.length>5000))) throw Error('A cell exceeds 5,000 characters.');
     tables.push({sheetName,headerRow,headers,rows,mapping,fuzzy:found.fuzzy,dateMode:detectDateMode(rows,mapping)||'iso',omitted,duplicates,continued,missingTitles});
   }
-  return {tables,skipped};
+  return {tables,skipped,summaryCounts};
 }
