@@ -555,7 +555,7 @@ export function analyzeRows({
             cleaning.warnings.push('Unresolved date retained in source fields: ' + String(raw));
             continue;
           }
-          if (raw instanceof Date || String(raw).trim() !== String(r[f]))
+          if (raw instanceof Date || (String(raw ?? '').trim() && String(raw).trim() !== String(r[f])))
             cleaning.dates++;
         }
       if (read("is_current") !== undefined) {

@@ -336,3 +336,19 @@ test('automatic mode reads Excel serial dates in explicitly mapped date columns'
   const r=analyzeRows({...base,automatic:true,rows:[['QA-01','Example inspection','A','Open','Inspector','46348']]});
   assert.equal(r.errors.length,0);assert.match(r.prepared[0].occurred_on,/^2026-/);
 });
+import { workbookTables, canonicalReference } from '../src/workbook.js';
+import * as XLSX from 'xlsx';
+test('workbook import excludes cover summaries and expands actual merged revision cells',()=>{
+ const b=XLSX.utils.book_new();XLSX.utils.book_append_sheet(b,XLSX.utils.aoa_to_sheet([['Contractor report'],['Discipline','Submitted','Closed'],['Civil',3,2]]),'Summary');
+ const s=XLSX.utils.aoa_to_sheet([['Contractor report'],[],['RFI No','Rev','Description','Status'],['RFI-001','A','Pipe inspection','Open'],['','B','','Approved']]);
+ s['!merges']=[{s:{r:3,c:0},e:{r:4,c:0}},{s:{r:3,c:2},e:{r:4,c:2}}];s['!ref']='A1:FM100';XLSX.utils.book_append_sheet(b,s,'RFI log');
+ const w=workbookTables(b,XLSX);assert.equal(w.tables.length,1);assert.equal(w.tables[0].headerRow,2);assert.equal(w.tables[0].rows[1][0],'RFI-001');assert.equal(w.tables[0].rows[1][2],'Pipe inspection');assert.equal(w.tables[0].headers.length,4);assert.deepEqual(w.skipped,['Summary']);
+});
+test('explicit reference labels and separate revision suffixes normalize consistently',()=>{
+ assert.equal(canonicalReference('RFI NO.: RFI-P100-P & C-001 Rev.A','A'),'RFI-P100-P&C-001');
+ assert.equal(canonicalReference('RFI-P100-PL-006A','A'),'RFI-P100-PL-006A');
+});
+test('automatic revisions have one current record and retire saved older revisions',()=>{
+ const r=analyzeRows({...base,automatic:true,rows:[['QA-01','New revision','B','Approved','Inspector','2026-11-22']],existing:[{reference:'QA-01',revision:'A',title:'Old',status:'Open',state:'open',owner:'Inspector',discipline:'Civil',due_date:null,occurred_on:null,is_current:true,payload:{},version:3}]});
+ assert.equal(r.errors.length,0);assert.equal(r.prepared.length,2);assert.equal(r.prepared.find(x=>x.revision==='A').is_current,false);assert.equal(r.prepared.find(x=>x.revision==='A').expected_version,3);assert.equal(r.prepared.find(x=>x.revision==='B').is_current,true);
+});
