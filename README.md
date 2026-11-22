@@ -55,3 +55,21 @@ For a new backend, apply `backend/schema.sql`, then `backend/workload.sql` to a 
 This is an initial working release, not an independent security audit. Review your organization's data-hosting rules before wider rollout. Take regular database exports and keep them outside the repository. The free hosting/database tiers have usage limits and can have inactivity or availability restrictions. A production rollout should include an agreed backup/restore process, monitoring, and a review of data residency and account ownership.
 
 © Abdelrahman Hamdy
+
+
+## Project assistant (no model provider)
+
+Every project has a Project assistant tab. This release uses deterministic data tools, not a hosted language model. No API key or paid AI service is connected, and files are not sent to a model provider. Unknown questions are not answered by guessing.
+
+- Chat reports the selected project's current status, progress, overdue records and 30-day inspector workload. `search: reference or description` finds current records. Answers include their source and read time. Chat is held in memory for the current tab and cleared on sign-out.
+- Excel/CSV review runs locally. Choose a worksheet and header row, map columns, confirm source-status meanings and date formats, then analyze. The preview separates additions/updates, rejects invalid rows and includes a full before/after CSV review. Only administrators can save. Viewers can analyze locally but cannot change records.
+- Supported uploads are tabular `.xlsx`, `.xls` or `.csv` files up to 5 MB, 5,000 nonblank data rows and 100 columns per worksheet. Scanned, encrypted and irregular report layouts are not automatically understood. Formula cells use their cached values; macros and formulas are not executed. Formatted numeric references retain their displayed text, including leading zeroes.
+- Matching is scoped to the project, register, reference and revision. Unmapped existing fields are preserved; mapped blank cells clear that field. Additional source columns are retained in the record payload. No records are deleted. A new current revision must not silently leave an older revision current.
+- Saves use `apply_assistant_import` in `backend/assistant.sql`: one atomic transaction, administrator authorization, existing RLS, and version checks. A failed or stale import rolls back completely. Existing standard-template import remains separate and unchanged.
+- PowerPoint export generates a local editable seven-slide reporting snapshot, in the current UI language. It includes saved progress, register counts, overdue records, workload and methodology. It is not an AI assessment or forecast. Status counts use current revisions, not historical cut-off formulas.
+
+Apply `backend/assistant.sql` after the base schema when installing a new backend. This adds only the import function and its execute grants; it creates no new data model, roles or access policies. The current deployment has administrator and viewer roles only.
+
+The assistant UI, workbook analysis, and presentation modules are separate. A future model integration would need its own server-side credential, explicit data-sharing decision, provider checks and approved budget. Do not put a provider key in the static frontend.
+
+Checks: `npm test` for workbook validation and `npm run test:browser` for permission-aware fixture browser checks. The browser suite uses a local mock backend and generated example data, never production credentials.

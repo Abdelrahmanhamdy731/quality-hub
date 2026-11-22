@@ -24,3 +24,5 @@ Object.assign(ar,{
  'Import Site RFIs using the standard template. Set owner to the inspector name and occurred_on to the inspection date (YYYY-MM-DD). Current revisions are counted in the selected 30-day window.':'استورد طلبات فحص الموقع بالقالب الموحد. ضع اسم المفتش في owner وتاريخ الفحص في occurred_on بصيغة YYYY-MM-DD. تحتسب المراجعات الحالية خلال فترة التقرير المحددة ومدتها 30 يوما.',
  'Up to 40 inspectors, ranked by inspection count.':'حتى 40 مفتشا، مرتبين حسب عدد الفحوصات.'
 });
+
+Object.assign(ar,{'Project assistant':'مساعد المشروع'});

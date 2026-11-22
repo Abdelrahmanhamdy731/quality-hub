@@ -4,7 +4,9 @@
   "description": "Bilingual project quality workspace",
   "scripts": {
     "build": "node build.mjs",
-    "check": "node --check src/app.js"
+    "check": "node --check src/app.js",
+    "test": "node --test tests/assistant-core.test.js",
+    "test:browser": "npm run build && node tests/assistant-browser.mjs"
   },
   "keywords": [],
   "author": "",
@@ -12,8 +14,12 @@
     "@supabase/supabase-js": "^2.119.2",
     "esbuild": "^0.28.2",
     "playwright": "^1.65.1",
+    "pptxgenjs": "4.0.0",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "private": true,
-  "type": "module"
+  "type": "module",
+  "overrides": {
+    "image-size": "2.1.0"
+  }
 }
