@@ -253,7 +253,14 @@ export function createAssistant(ctx) {
             "\n" +
             tr("Progress date: ", "تاريخ التقدم: ") +
             (p.as_of || tr("Not recorded", "غير مسجل")) +
-            (p.note ? "\n\n" + p.note : "");
+            (p.note
+              ? "\n\n" +
+                tr(
+                  "Saved note (may reflect an earlier reporting cut-off): ",
+                  "ملاحظة محفوظة (قد تعكس تاريخ تقرير سابقا): ",
+                ) +
+                p.note
+              : "");
         else if (intent.type === "overdue")
           text =
             num(s.overdueCount) +

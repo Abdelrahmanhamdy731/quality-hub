@@ -210,7 +210,7 @@ export async function createProjectDeck(snapshot, { language = "en" } = {}) {
   );
   text(
     s,
-    tr("Latest project note", "آخر ملاحظة للمشروع"),
+    tr("Saved project note", "ملاحظة المشروع المحفوظة"),
     0.55,
     4.2,
     12,
@@ -220,14 +220,27 @@ export async function createProjectDeck(snapshot, { language = "en" } = {}) {
   );
   text(
     s,
+    tr(
+      "May reflect an earlier reporting cut-off, not current register counts.",
+      "قد تعكس تاريخ تقرير سابقا، وليست أعداد السجلات الحالية.",
+    ),
+    0.55,
+    4.68,
+    12,
+    0.3,
+    11,
+    { color: C.muted },
+  );
+  text(
+    s,
     short(
       p.note || tr("No project note recorded.", "لم تسجل ملاحظة للمشروع."),
       350,
     ),
     0.55,
-    4.85,
+    5.15,
     12,
-    1.25,
+    1.15,
     19,
   );
   s.addNotes(
