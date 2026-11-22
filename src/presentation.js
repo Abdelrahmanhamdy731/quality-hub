@@ -57,7 +57,7 @@ export async function createProjectDeck(snapshot, { language = "en" } = {}) {
       color: C.ink,
       margin: 0,
       breakLine: false,
-      rtlMode: isAr,
+      rtlMode: isAr && /[\u0600-\u06ff]/.test(String(t)),
       align: isAr ? "right" : "left",
       ...options,
     });
