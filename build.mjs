@@ -1,6 +1,6 @@
 import * as esbuild from 'esbuild';
 import {mkdir,writeFile,readFile,rm,copyFile} from 'node:fs/promises';
-const configPath=process.env.QUALITY_CONFIG_FILE||'/downloads/quality-public-config.json';
+const configPath=process.env.QUALITY_CONFIG_FILE||'quality.config.json';
 const cfg=JSON.parse(await readFile(configPath,'utf8'));
 await mkdir('docs',{recursive:true});
 await rm('docs/assets',{recursive:true,force:true});

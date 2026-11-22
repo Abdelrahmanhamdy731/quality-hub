@@ -42,7 +42,8 @@ Deno.serve(async (req) => {
  const active=b.active===true;
  const {error}=await admin.from('profiles').update({active}).eq('id',target.id);
  if(error)return reply({error:error.message},400);
- await admin.auth.admin.updateUserById(target.id,{ban_duration:active?'none':'876000h'});
+ const {error:banError}=await admin.auth.admin.updateUserById(target.id,{ban_duration:active?'none':'876000h'});
+ if(banError){if(active)await admin.from('profiles').update({active:false}).eq('id',target.id);return reply({error:'The account sign-in status could not be changed. Please try again.'},400);}
  await admin.from('audit_log').insert({actor_id:user.id,action:active?'USER_ENABLED':'USER_DISABLED',entity:'profiles',entity_id:target.id,label:target.username});
  return reply({ok:true});
  }

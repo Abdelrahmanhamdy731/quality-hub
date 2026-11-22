@@ -39,14 +39,14 @@ Imported source fields are retained as additional record fields for traceability
 
 ## Development
 
-Requires Node.js 20 or newer.
+Requires Node.js 20 or newer. SheetJS is pinned to the maintained 0.20.3 distribution from its official CDN, rather than the older npm-registry release.
 
 ```sh
 npm ci
-QUALITY_CONFIG_FILE=/absolute/path/to/public-config.json npm run build
+npm run build
 ```
 
-The config file has `url` and `anonKey` fields. Never put a service-role key or an account token in it. Built output is in `docs/`. GitHub Pages serves the `main` branch's `/docs` directory.
+The `quality.config.json` file has `url` and `anonKey` fields. Set `QUALITY_CONFIG_FILE` to use a different public config file. Never put a service-role key or an account token in it. Built output is in `docs/`. GitHub Pages serves the `main` branch's `/docs` directory.
 
 For a new backend, apply `backend/schema.sql`, then `backend/workload.sql` to a dedicated Supabase project. Deploy `backend/manage-users.ts` as the `manage-users` Edge Function. The handler verifies the caller's JWT with Supabase Auth and checks the caller's active administrator profile on every request. Its allowed origins should match the hosting domains. Provision the initial admin through Supabase Auth and insert its corresponding `profiles` row through a trusted server-side connection. Disable public sign-up in Supabase Auth and set a password minimum of 12 characters.
 
