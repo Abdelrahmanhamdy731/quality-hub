@@ -15,18 +15,54 @@ export const aliases = {
   reference: [
     "reference",
     "ref",
+    "ref no",
     "rfi no",
+    "rfi ref",
     "rfi number",
     "document no",
+    "doc no",
     "document number",
+    "inspection no",
+    "inspection ref",
+    "inspection request no",
     "request no",
+    "request number",
     "record id",
+    "mir no",
+    "wir no",
+    "sir no",
+    "ncr no",
     "رقم المرجع",
     "رقم الطلب",
+    "رقم الفحص",
+    "رقم السجل",
   ],
-  title: ["title", "description", "subject", "activity", "الوصف", "الموضوع"],
-  revision: ["revision", "rev", "المراجعة"],
-  status: ["status", "current status", "الحالة"],
+  title: [
+    "title",
+    "description",
+    "subject",
+    "activity",
+    "work description",
+    "works description",
+    "inspection description",
+    "activity description",
+    "details",
+    "scope of work",
+    "الوصف",
+    "الموضوع",
+    "تفاصيل",
+    "وصف النشاط",
+  ],
+  revision: ["revision", "rev", "rev no", "revision no", "rev letter", "المراجعة"],
+  status: [
+    "status",
+    "current status",
+    "rfi status",
+    "approval status",
+    "review status",
+    "الحالة",
+    "حالة الطلب",
+  ],
   state: ["state", "normalized state"],
   owner: [
     "owner",
@@ -34,19 +70,51 @@ export const aliases = {
     "inspector name",
     "assigned to",
     "responsible",
+    "qc inspector",
+    "engineer",
+    "consultant",
+    "requested by",
+    "raised by",
+    "submitted by",
     "المفتش",
     "المسؤول",
+    "المهندس",
   ],
-  discipline: ["discipline", "trade", "التخصص"],
-  due_date: ["due date", "target date", "تاريخ الاستحقاق"],
+  discipline: ["discipline", "trade", "work discipline", "section", "التخصص", "القسم"],
+  due_date: [
+    "due date",
+    "target date",
+    "required date",
+    "required by",
+    "deadline",
+    "target completion",
+    "تاريخ الاستحقاق",
+    "التاريخ المستهدف",
+  ],
   occurred_on: [
     "occurred on",
     "inspection date",
     "request date",
+    "submittal date",
+    "submission date",
+    "date of inspection",
+    "raised date",
+    "date raised",
+    "issue date",
+    "issued date",
     "date",
     "تاريخ الفحص",
+    "تاريخ الطلب",
+    "تاريخ الإصدار",
   ],
-  is_current: ["is current", "current revision", "الحالي"],
+  is_current: [
+    "is current",
+    "current revision",
+    "current",
+    "latest revision",
+    "is latest",
+    "الحالي",
+  ],
 };
 const norm = (v) =>
   String(v ?? "")
@@ -55,44 +123,230 @@ const norm = (v) =>
     .replace(/[_#.:\-]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-export function suggestMapping(headers) {
+const stop = new Set(["of", "the", "for", "a", "an", "and"]);
+const tokens = (v) => norm(v).split(" ").filter((t) => t && !stop.has(t));
+function lev(a, b) {
+  if (Math.abs(a.length - b.length) > 1) return 2;
+  const dp = [...Array(b.length + 1).keys()];
+  for (let i = 1; i <= a.length; i++) {
+    let prev = dp[0];
+    dp[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const t = dp[j];
+      dp[j] = Math.min(dp[j] + 1, dp[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = t;
+    }
+  }
+  return dp[b.length];
+}
+const aliasNorm = {};
+for (const f of fields)
+  aliasNorm[f] = [f.replaceAll("_", " "), ...(aliases[f] || [])].map(norm);
+function matchTok(t, set) {
+  if (set.has(t)) return true;
+  if (t.length >= 5)
+    for (const u of set)
+      if (Math.abs(u.length - t.length) <= 1 && lev(t, u) <= 1) return true;
+  return false;
+}
+function scorePair(h, a) {
+  if (!h || !a) return 0;
+  if (h === a) return 1;
+  const ht = new Set(tokens(h)),
+    at = new Set(tokens(a));
+  if (!ht.size || !at.size) return 0;
+  let interH = 0;
+  for (const t of ht) if (matchTok(t, at)) interH++;
+  let interA = 0;
+  for (const t of at) if (matchTok(t, ht)) interA++;
+  const inter = Math.min(interH, interA);
+  let s = inter / (ht.size + at.size - inter);
+  if (interA === at.size) s += 0.25; // every alias token appears in the header
+  else if (interH === ht.size) s += 0.15;
+  return s;
+}
+const bestScore = (header, f) =>
+  aliasNorm[f].reduce((m, a) => Math.max(m, scorePair(header, a)), 0);
+export function suggestDetailed(headers) {
   const used = new Set(),
-    m = {};
+    m = {},
+    fuzzy = [],
+    hn = headers.map(norm);
   for (const f of fields) {
-    const i = headers.findIndex(
-      (h, i) =>
-        !used.has(i) &&
-        [f.replaceAll("_", " "), ...aliases[f]].includes(norm(h)),
-    );
+    const i = hn.findIndex((h, i) => !used.has(i) && aliasNorm[f].includes(h));
     m[f] = i < 0 ? "" : String(i);
     if (i >= 0) used.add(i);
   }
-  return m;
+  const cand = [];
+  for (const f of fields)
+    if (m[f] === "")
+      hn.forEach((h, i) => {
+        if (used.has(i) || !h) return;
+        const s = bestScore(h, f);
+        if (s >= 0.5) cand.push({ f, i, s });
+      });
+  cand.sort((a, b) => b.s - a.s);
+  for (const c of cand) {
+    if (m[c.f] !== "" || used.has(c.i)) continue;
+    const clash = fields.some(
+      (o) =>
+        o !== c.f &&
+        m[o] === "" &&
+        Math.abs(bestScore(hn[c.i], o) - c.s) < 0.15,
+    );
+    if (clash) continue;
+    m[c.f] = String(c.i);
+    used.add(c.i);
+    fuzzy.push(c.f);
+  }
+  return { mapping: m, fuzzy };
+}
+export function suggestMapping(headers) {
+  return suggestDetailed(headers).mapping;
+}
+export function headerScore(grid, scan = 10) {
+  const aliasSet = new Set(fields.flatMap((f) => aliasNorm[f]));
+  let row = 0,
+    score = 0;
+  const lim = Math.min(scan, grid.length);
+  for (let r = 0; r < lim; r++) {
+    const s = (grid[r] || []).reduce(
+      (n, c) => n + (aliasSet.has(norm(c)) ? 1 : 0),
+      0,
+    );
+    if (s > score) {
+      row = r;
+      score = s;
+    }
+  }
+  return { row: score >= 2 ? row : 0, score };
+}
+export function detectHeaderRow(grid, scan = 10) {
+  return headerScore(grid, scan).row;
+}
+export function detectDateMode(rows, mapping) {
+  const cols = [mapping.due_date, mapping.occurred_on]
+    .filter((v) => v !== "" && v != null)
+    .map(Number);
+  let iso = 0,
+    dmy = 0,
+    mdy = 0;
+  for (const row of rows) {
+    for (const c of cols) {
+      const v = row[c];
+      if (v == null || v === "" || v instanceof Date || typeof v === "number")
+        continue;
+      const s = String(v).trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) iso++;
+      else {
+        const m = s.match(/^(\d{1,2})[/.\-](\d{1,2})[/.\-](\d{4})$/);
+        if (m) {
+          if (Number(m[1]) > 12) dmy++;
+          else if (Number(m[2]) > 12) mdy++;
+        }
+      }
+    }
+  }
+  if (dmy && !mdy) return "dmy";
+  if (mdy && !dmy) return "mdy";
+  if (iso && !dmy && !mdy) return "iso";
+  return null;
+}
+export function formatKey(mapped) {
+  return fields
+    .filter((f) => mapped[f])
+    .map((f) => f + "=" + norm(mapped[f]))
+    .sort()
+    .join(";");
+}
+export function matchSavedFormat(headers, entries) {
+  const hn = headers.map(norm);
+  let best = null;
+  for (const e of entries || []) {
+    const mapped = e.mapped || {},
+      usedIdx = new Set(),
+      indices = {};
+    let matched = 0,
+      ok = true;
+    for (const f of ["reference", ...fields.filter((x) => x !== "reference")]) {
+      const name = mapped[f];
+      if (!name) continue;
+      const i = hn.findIndex((h, i) => !usedIdx.has(i) && h === norm(name));
+      if (i < 0) {
+        if (f === "reference") {
+          ok = false;
+          break;
+        }
+        continue;
+      }
+      indices[f] = String(i);
+      usedIdx.add(i);
+      matched++;
+    }
+    if (!ok || matched < 2) continue;
+    if (
+      !best ||
+      matched > best.matched ||
+      (matched === best.matched && (e.savedAt || "") > (best.entry.savedAt || ""))
+    )
+      best = {
+        matched,
+        entry: e,
+        mapping: Object.fromEntries(fields.map((f) => [f, indices[f] || ""])),
+      };
+  }
+  return best;
 }
 export function normalizeState(value) {
   const s = norm(value);
   const groups = {
-    open: ["open", "pending", "outstanding", "مفتوح", "مفتوحة", "قيد الانتظار"],
+    open: [
+      "open",
+      "pending",
+      "outstanding",
+      "in progress",
+      "new",
+      "reopened",
+      "re opened",
+      "ongoing",
+      "مفتوح",
+      "مفتوحة",
+      "قيد الانتظار",
+      "جاري",
+      "قيد التنفيذ",
+    ],
     closed: [
       "closed",
+      "close",
       "approved",
       "accepted",
       "complete",
       "completed",
+      "done",
+      "closed approved",
+      "approved as noted",
+      "resolved",
       "مغلق",
       "مغلقة",
       "معتمد",
       "مقبول",
+      "منجز",
+      "تم",
     ],
     review: [
       "review",
       "under review",
       "in review",
+      "for review",
       "submitted",
+      "with consultant",
+      "for approval",
+      "awaiting approval",
       "قيد المراجعة",
+      "للمراجعة",
     ],
-    void: ["void", "cancelled", "canceled", "ملغي"],
-    superseded: ["superseded", "مستبدل"],
+    void: ["void", "cancelled", "canceled", "withdrawn", "ملغي", "مسحوب"],
+    superseded: ["superseded", "replaced", "مستبدل", "تم استبداله"],
     other: ["other", "أخرى"],
   };
   for (const [k, a] of Object.entries(groups)) if (a.includes(s)) return k;
@@ -127,6 +381,7 @@ export function validDate(v, mode = "iso") {
     );
   return s;
 }
+const cleanText = (v) => String(v ?? "").replace(/\s+/g, " ").trim();
 export function analyzeRows({
   rows,
   headers,
@@ -143,7 +398,8 @@ export function analyzeRows({
     seen = new Set(),
     byKey = new Map(
       existing.map((r) => [JSON.stringify([r.reference, r.revision]), r]),
-    );
+    ),
+    cleaning = { dates: 0, statuses: 0, trimmed: 0 };
   let added = 0,
     updated = 0;
   if (mapping.reference === "")
@@ -164,8 +420,15 @@ export function analyzeRows({
         mapping[f] !== "" && mapping[f] != null
           ? (row[Number(mapping[f])] ?? "")
           : undefined;
-      const reference = String(read("reference") ?? "").trim(),
-        revision = String(read("revision") ?? "").trim(),
+      const readText = (f) => {
+        const v = read(f);
+        if (v === undefined) return undefined;
+        const cleaned = cleanText(v);
+        if (cleaned !== String(v ?? "")) cleaning.trimmed++;
+        return cleaned;
+      };
+      const reference = readText("reference") ?? "",
+        revision = readText("revision") ?? "",
         key = JSON.stringify([reference, revision]);
       if (!reference || reference.length > 500)
         throw Error(
@@ -198,8 +461,8 @@ export function analyzeRows({
             payload: {},
           };
       for (const f of ["title", "status", "owner", "discipline"]) {
-        const v = read(f);
-        if (v !== undefined) r[f] = String(v).trim();
+        const v = readText(f);
+        if (v !== undefined) r[f] = v;
       }
       if (!r.title || r.title.length > 3000)
         throw Error(
@@ -207,8 +470,9 @@ export function analyzeRows({
         );
       if (read("state") !== undefined || read("status") !== undefined) {
         const value =
-          read("state") !== undefined ? String(read("state")).trim() : r.status;
-        r.state = stateMap[value] || normalizeState(value);
+          read("state") !== undefined ? cleanText(read("state")) : r.status;
+        const custom = stateMap[value];
+        r.state = custom || normalizeState(value);
         if (!r.state) throw Error("Map the status: " + value);
         if (
           !["open", "closed", "review", "void", "superseded", "other"].includes(
@@ -216,9 +480,15 @@ export function analyzeRows({
           )
         )
           throw Error("Invalid normalized state");
+        if (custom || norm(value) !== r.state) cleaning.statuses++;
       }
       for (const f of ["due_date", "occurred_on"])
-        if (read(f) !== undefined) r[f] = validDate(read(f), dateMode);
+        if (read(f) !== undefined) {
+          const raw = read(f);
+          r[f] = validDate(raw, dateMode);
+          if (raw instanceof Date || String(raw).trim() !== String(r[f]))
+            cleaning.dates++;
+        }
       if (read("is_current") !== undefined) {
         const v = norm(read("is_current"));
         if (!["true", "false", "yes", "no", "1", "0", "نعم", "لا"].includes(v))
@@ -297,7 +567,7 @@ export function analyzeRows({
         });
     }
   }
-  return { prepared, errors, added, updated, changes };
+  return { prepared, errors, added, updated, changes, cleaning };
 }
 export function detectIntent(input) {
   const q = String(input).toLowerCase().trim();

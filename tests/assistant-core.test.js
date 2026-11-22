@@ -217,3 +217,93 @@ test("before and after review preserves original values", () => {
   assert.equal(r.changes[0].before.title, "Before");
   assert.equal(r.changes[0].after.title, "Example inspection");
 });
+import {
+  suggestDetailed,
+  detectHeaderRow,
+  detectDateMode,
+  matchSavedFormat,
+  formatKey,
+} from "../src/assistant-core.js";
+
+const contractorHeaders = [
+  "Document Ref. No",
+  "Work Description",
+  "Rev No.",
+  "Approval Status",
+  "QC Engineer",
+  "Required By Date",
+  "Date of Submission",
+];
+test("fuzzy contractor headers map to register fields", () => {
+  const d = suggestDetailed(contractorHeaders);
+  assert.equal(d.mapping.reference, "0");
+  assert.equal(d.mapping.title, "1");
+  assert.equal(d.mapping.revision, "2");
+  assert.equal(d.mapping.status, "3");
+  assert.equal(d.mapping.owner, "4");
+  assert.equal(d.mapping.due_date, "5");
+  assert.equal(d.mapping.occurred_on, "6");
+  assert.ok(d.fuzzy.length > 0, "fuzzy matches are labeled");
+});
+test("ambiguous headers are left for manual mapping", () => {
+  const d = suggestDetailed(["Notes column", "Misc data"]);
+  assert.equal(d.mapping.reference, "");
+  assert.equal(d.mapping.title, "");
+});
+test("header row detected under title rows", () => {
+  const grid = [
+    ["Contractor weekly register"],
+    [],
+    ["RFI No.", "Description", "Rev", "Current status", "Inspector", "Inspection date"],
+    ["QA-1", "Work", "A", "Open", "Insp", "2026-11-22"],
+  ];
+  assert.equal(detectHeaderRow(grid), 2);
+});
+test("header row defaults to first when nothing matches", () => {
+  assert.equal(detectHeaderRow([["a", "b"], ["c", "d"]]), 0);
+});
+test("date mode detected from unambiguous values", () => {
+  const m = { due_date: "0", occurred_on: "" };
+  assert.equal(detectDateMode([["22/11/2026"]], m), "dmy");
+  assert.equal(detectDateMode([["11/22/2026"]], m), "mdy");
+  assert.equal(detectDateMode([["2026-11-22"]], m), "iso");
+  assert.equal(detectDateMode([["02/03/2026"]], m), null);
+});
+test("saved format matches despite moved or extra columns", () => {
+  const saved = {
+    mapped: { reference: "RFI No.", title: "Description", owner: "Inspector" },
+    savedAt: "2026-11-22T00:00:00Z",
+  };
+  const m = matchSavedFormat(
+    ["Extra note", "RFI No.", "Description", "Inspector", "New column"],
+    [saved],
+  );
+  assert.ok(m, "format recognized");
+  assert.equal(m.mapping.reference, "1");
+  assert.equal(m.mapping.title, "2");
+  assert.equal(m.mapping.owner, "3");
+});
+test("saved format rejected when reference column missing", () => {
+  const saved = { mapped: { reference: "RFI No.", title: "Description" } };
+  assert.equal(matchSavedFormat(["Description", "Other"], [saved]), null);
+});
+test("format key is order independent", () => {
+  assert.equal(
+    formatKey({ title: "B", reference: "A" }),
+    formatKey({ reference: "A", title: "B" }),
+  );
+});
+test("cleaning counts dates, statuses and trimmed cells", () => {
+  const r = analyzeRows({
+    ...base,
+    rows: [["  QA-01 ", "Example   inspection", "A", "Under Review", "Insp", "22/11/2026"]],
+    dateMode: "dmy",
+  });
+  assert.equal(r.errors.length, 0);
+  assert.equal(r.cleaning.dates, 1);
+  assert.equal(r.cleaning.statuses, 1);
+  assert.ok(r.cleaning.trimmed >= 1);
+  assert.equal(r.prepared[0].reference, "QA-01");
+  assert.equal(r.prepared[0].title, "Example inspection");
+  assert.equal(r.prepared[0].state, "review");
+});

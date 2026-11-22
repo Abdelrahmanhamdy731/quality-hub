@@ -124,6 +124,55 @@ await fs.writeFile(
   "/downloads/assistant-fixture.xlsx",
   XLSX.write(book, { type: "buffer", bookType: "xlsx" }),
 );
+const contractorBook = (title) => {
+  const b = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(
+    b,
+    XLSX.utils.aoa_to_sheet([
+      ["ABC Contracting - weekly inspection register"],
+      ["Prepared by site QA", ""],
+      [
+        "Document Ref. No",
+        "Work Description",
+        "Rev No.",
+        "Approval Status",
+        "QC Engineer",
+        "Required By Date",
+        "Date of Submission",
+      ],
+      ["QA-OLD", title, "A", "Approved", "Eng. Smith", "30/11/2026", "22/11/2026"],
+      ["QA-NEW2", "New contractor row", "A", "In Progress", "Eng. Smith", "29/11/2026", "21/11/2026"],
+    ]),
+    "Weekly Report",
+  );
+  return XLSX.write(b, { type: "buffer", bookType: "xlsx" });
+};
+await fs.writeFile("/downloads/assistant-contractor-a.xlsx", contractorBook("Contractor row v1"));
+const contractorBook2 = () => {
+  const b = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(
+    b,
+    XLSX.utils.aoa_to_sheet([
+      ["ABC Contracting - weekly inspection register"],
+      [],
+      [
+        "Document Ref. No",
+        "Work Description",
+        "Extra Note",
+        "Rev No.",
+        "Approval Status",
+        "QC Engineer",
+        "Required By Date",
+        "Date of Submission",
+      ],
+      ["QA-OLD", "Contractor row v2", "note", "A", "Approved", "Eng. Smith", "30/11/2026", "22/11/2026"],
+      ["QA-NEW2", "New contractor row", "note", "A", "In Progress", "Eng. Smith", "29/11/2026", "21/11/2026"],
+    ]),
+    "Weekly Report",
+  );
+  return XLSX.write(b, { type: "buffer", bookType: "xlsx" });
+};
+await fs.writeFile("/downloads/assistant-contractor-b.xlsx", contractorBook2());
 async function setup(role = "admin") {
   const context = await browser.newContext({
       viewport: { width: 1440, height: 1050 },
@@ -363,6 +412,99 @@ try {
     writes[0].items.find((r) => r.reference === "QA-NEW").occurred_on ===
       "2026-11-21",
     "day/month/year import preserved",
+  );
+  // New contractor format: fuzzy headers, auto sheet/header/date detection, one review, then saved
+  await page.locator("#assistant-upload").click();
+  await page
+    .locator("#assistant-file")
+    .setInputFiles("/downloads/assistant-contractor-a.xlsx");
+  await page.locator("#assistant-sheet").waitFor({ state: "visible" });
+  ok(
+    (await page.locator("#assistant-sheet").inputValue()) === "Weekly Report",
+    "register worksheet auto-selected over title sheets",
+  );
+  ok(
+    (await page.locator("#assistant-header").inputValue()) === "3",
+    "header row auto-detected under title rows",
+  );
+  ok(
+    (await page.locator('[data-map-field="reference"]').inputValue()) === "0" &&
+      (await page.locator('[data-map-field="due_date"]').inputValue()) === "5" &&
+      (await page.locator('[data-map-field="occurred_on"]').inputValue()) === "6",
+    "fuzzy contractor headers mapped",
+  );
+  ok(
+    (await page.locator("#assistant-date-mode").inputValue()) === "dmy",
+    "day-first date format auto-detected",
+  );
+  ok(
+    (await page.locator("#assistant-mapping").innerText()).includes("(auto)"),
+    "fuzzy matches labeled as automatic",
+  );
+  await page.screenshot({
+    path: "/downloads/auto-format-mapping-en.png",
+    fullPage: true,
+  });
+  await page.locator("#assistant-analyze").click();
+  await page.locator("#assistant-approval").waitFor();
+  const previewA = await page
+    .locator("#assistant-import-preview")
+    .innerText();
+  ok(
+    previewA.includes("1 new") &&
+      previewA.includes("1 updates") &&
+      previewA.includes("0 errors"),
+    "contractor format preview clean",
+  );
+  ok(
+    previewA.includes("Cleaned automatically") && previewA.includes("dates standardized"),
+    "cleaning summary reported",
+  );
+  await page.locator("#assistant-approval").check();
+  await page.locator("#assistant-commit").click();
+  await page.locator(".modal-backdrop").waitFor({ state: "hidden" });
+  ok(
+    writes[1].items.find((r) => r.reference === "QA-OLD").due_date ===
+      "2026-11-30",
+    "day-first due date standardized on save",
+  );
+  // Same format again with a moved layout: recognized, auto-analyzed, no mapping work
+  await page.locator("#assistant-upload").click();
+  await page
+    .locator("#assistant-file")
+    .setInputFiles("/downloads/assistant-contractor-b.xlsx");
+  await page.locator("#assistant-approval").waitFor();
+  ok(
+    (await page.locator("#assistant-mapping").innerText()).includes(
+      "Known format recognized",
+    ),
+    "saved format recognized on later upload",
+  );
+  ok(
+    (await page.locator('[data-map-field="revision"]').inputValue()) === "3",
+    "saved mapping resolved by column name after layout shift",
+  );
+  await page.screenshot({
+    path: "/downloads/auto-format-recognized-en.png",
+    fullPage: true,
+  });
+  const previewB = await page
+    .locator("#assistant-import-preview")
+    .innerText();
+  ok(
+    previewB.includes("Known format applied") &&
+      previewB.includes("0 errors") &&
+      previewB.includes("1 updates"),
+    "recognized format auto-analyzed to a compact preview",
+  );
+  await page.locator("#assistant-approval").check();
+  await page.locator("#assistant-commit").click();
+  await page.locator(".modal-backdrop").waitFor({ state: "hidden" });
+  ok(writes.length === 3, "recognized format saved atomically too");
+  ok(
+    writes[2].items.find((r) => r.reference === "QA-OLD").title ===
+      "Contractor row v2",
+    "second upload updated the record",
   );
   const [ppt] = await Promise.all([
     page.waitForEvent("download"),

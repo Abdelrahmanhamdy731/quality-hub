@@ -1,9 +1,14 @@
 import {
   fields,
-  suggestMapping,
+  suggestDetailed,
   normalizeState,
   analyzeRows,
   detectIntent,
+  detectHeaderRow,
+  headerScore,
+  detectDateMode,
+  matchSavedFormat,
+  formatKey,
 } from "./assistant-core.js";
 import "./assistant.css";
 
@@ -28,6 +33,29 @@ export function createAssistant(ctx) {
     const key = ctx.userId() + ":" + pid;
     if (!chats.has(key)) chats.set(key, []);
     return chats.get(key);
+  };
+  const formatStore = {
+    key: () => "quality-import-formats:" + ctx.userId(),
+    all() {
+      try {
+        return JSON.parse(localStorage.getItem(this.key()) || "{}");
+      } catch {
+        return {};
+      }
+    },
+    save(fp, entry) {
+      const a = this.all();
+      a[fp] = entry;
+      const keys = Object.keys(a).sort(
+        (x, y) => (a[y].savedAt || "").localeCompare(a[x].savedAt || ""),
+      );
+      for (const k of keys.slice(50)) delete a[k];
+      try {
+        localStorage.setItem(this.key(), JSON.stringify(a));
+      } catch {
+        /* storage full or blocked: recognition just stays off */
+      }
+    },
   };
   const labels = {
     reference: ["Reference", "المرجع"],
@@ -172,8 +200,8 @@ export function createAssistant(ctx) {
       const intent = detectIntent(input);
       if (intent.type === "upload") {
         text = tr(
-          "Use Analyze Excel / CSV to choose a worksheet and map columns. You will see a preview before any update.",
-          "استخدم تحليل Excel / CSV لاختيار ورقة العمل ومطابقة الأعمدة. ستظهر المعاينة قبل أي تحديث.",
+          "Use Analyze Excel / CSV and drop the workbook. Known formats are detected and applied automatically; a new format needs one review, then it is remembered. Every change is previewed before saving.",
+          "استخدم تحليل Excel / CSV وأسقط الملف. التنسيقات المعروفة تطبق تلقائيا، والتنسيق الجديد يحتاج مراجعة واحدة ثم يتذكره. كل تغيير يعرض قبل الحفظ.",
         );
       } else if (intent.type === "presentation") {
         text = tr(
@@ -467,7 +495,10 @@ export function createAssistant(ctx) {
       data = [],
       mapping = {},
       prepared = null,
-      selection = 0;
+      selection = 0,
+      fuzzyFields = [],
+      savedMatch = null,
+      autoRan = false;
     const options = (items, value = "") =>
       items
         .map(
@@ -478,7 +509,7 @@ export function createAssistant(ctx) {
     const w = modal(
       tr("Analyze a workbook", "تحليل ملف جداول"),
       p.code + " · " + p.name,
-      `<div class="notice">${icon("shield")}<span>${tr("Local analysis only. Choose one table at a time. No model reads your file. Nothing is saved until you confirm the preview.", "تحليل محلي فقط. اختر جدولا واحدا كل مرة. لا يقرأ أي نموذج ملفك. لا يحفظ شيء حتى تأكيد المعاينة.")}</span></div><div class="file-drop"><h3>${tr("Choose Excel or CSV", "اختر Excel أو CSV")}</h3><input type="file" id="assistant-file" accept=".xlsx,.xls,.csv" aria-label="${tr("Workbook file", "ملف الجداول")}"><p>${tr("Up to 5 MB, 5,000 data rows and 100 columns per sheet. Tables only, not scanned pages or arbitrary report layouts.", "حتى 5 ميجابايت و5000 صف و100 عمود لكل ورقة. جداول فقط، وليس صورا ممسوحة أو تقارير غير منتظمة.")}</p></div><div id="assistant-workbook" hidden><div class="form-grid"><label class="field"><span>${tr("Worksheet", "ورقة العمل")}</span><select id="assistant-sheet"></select></label><label class="field"><span>${tr("Header row", "صف العناوين")}</span><input id="assistant-header" type="number" min="1" max="50" value="1"></label><label class="field"><span>${tr("Target register", "السجل المستهدف")}</span><select id="assistant-register">${options(
+      `<div class="notice">${icon("shield")}<span>${tr("Local analysis only. Choose one table at a time. No model reads your file. Nothing is saved until you confirm the preview. A format you confirm is remembered and applied automatically on later uploads.", "تحليل محلي فقط. اختر جدولا واحدا كل مرة. لا يقرأ أي نموذج ملفك. لا يحفظ شيء حتى تأكيد المعاينة. أي تنسيق تؤكده يحفظ ويطبق تلقائيا في المرات التالية.")}</span></div><div class="file-drop"><h3>${tr("Choose Excel or CSV", "اختر Excel أو CSV")}</h3><input type="file" id="assistant-file" accept=".xlsx,.xls,.csv" aria-label="${tr("Workbook file", "ملف الجداول")}"><p>${tr("Up to 5 MB, 5,000 data rows and 100 columns per sheet. Tables only, not scanned pages or arbitrary report layouts.", "حتى 5 ميجابايت و5000 صف و100 عمود لكل ورقة. جداول فقط، وليس صورا ممسوحة أو تقارير غير منتظمة.")}</p></div><div id="assistant-workbook" hidden><div class="form-grid"><label class="field"><span>${tr("Worksheet", "ورقة العمل")}</span><select id="assistant-sheet"></select></label><label class="field"><span>${tr("Header row", "صف العناوين")}</span><input id="assistant-header" type="number" min="1" max="50" value="1"></label><label class="field"><span>${tr("Target register", "السجل المستهدف")}</span><select id="assistant-register">${options(
         Object.keys(ctx.modules).map((k) => [k, ctx.mname(k)]),
         "site_rfi",
       )}</select></label><label class="field"><span>${tr("Text date format", "تنسيق التاريخ النصي")}</span><select id="assistant-date-mode">${options(
@@ -513,6 +544,12 @@ export function createAssistant(ctx) {
           const result = await check(
             db.rpc("apply_assistant_import", { pid, cat, items }),
           );
+          if (w.applied?.mapped?.reference)
+            formatStore.save(formatKey(w.applied.mapped), {
+              ...w.applied,
+              savedAt: new Date().toISOString(),
+              file: $("#assistant-file", w).files[0]?.name || "",
+            });
           w.close();
           await loadData();
           store(pid).push({
@@ -565,7 +602,7 @@ export function createAssistant(ctx) {
             .slice(0, 60)
             .map(
               (v, i) =>
-                `<label class="field"><span>${esc(v || tr("(blank)", "(فارغ)"))}</span><select data-status-index="${i}">${options([["", tr("Choose a state", "اختر الحالة")], ...Object.keys(stateLabels).map((k) => [k, label(k)])], normalizeState(v) || "")}</select></label>`,
+                `<label class="field"><span>${esc(v || tr("(blank)", "(فارغ)"))}</span><select data-status-index="${i}">${options([["", tr("Choose a state", "اختر الحالة")], ...Object.keys(stateLabels).map((k) => [k, label(k)])], w.savedStatusMap?.[v] || normalizeState(v) || "")}</select></label>`,
             )
             .join(
               "",
@@ -611,9 +648,32 @@ export function createAssistant(ctx) {
             "تتجاوز خلية 5000 حرف. اختصرها أو قسمها.",
           ),
         );
-      mapping = suggestMapping(headers);
+      const det = suggestDetailed(headers);
+      mapping = det.mapping;
+      fuzzyFields = det.fuzzy;
+      const dm = detectDateMode(data, mapping);
+      if (dm) $("#assistant-date-mode", w).value = dm;
+      savedMatch = matchSavedFormat(headers, Object.values(formatStore.all()));
+      let formatNote = "";
+      if (savedMatch) {
+        mapping = { ...mapping, ...savedMatch.mapping };
+        fuzzyFields = [];
+        const e = savedMatch.entry;
+        if (e.dateMode) $("#assistant-date-mode", w).value = e.dateMode;
+        if (e.category && ctx.modules[e.category])
+          $("#assistant-register", w).value = e.category;
+        w.savedStatusMap = e.statusMap || null;
+        formatNote = `<div class="notice">${icon("check")}<span>${tr("Known format recognized from ", "تم التعرف على تنسيق معروف من ") + esc(e.file || tr("a previous upload", "رفع سابق")) + ". " + tr("Your saved column mapping, date format and status meanings are applied. Review the summary and confirm.", "طبقت مطابقة الأعمدة وتنسيق التاريخ ومعاني الحالات المحفوظة. راجع الملخص وأكد.")}</span></div>`;
+      } else w.savedStatusMap = null;
+      const unmappedCols = headers.filter(
+        (_, i) => !Object.values(mapping).includes(String(i)),
+      );
+      const unmappedNote = unmappedCols.length
+        ? `<p class="small muted">${esc(tr("Not matched to a register field, kept as extra fields: ", "غير مربوطة بحقل وتبقى كحقول إضافية: ") + unmappedCols.slice(0, 12).join(", ") + (unmappedCols.length > 12 ? "…" : ""))}</p>`
+        : "";
       $("#assistant-mapping", w).innerHTML =
-        `<div class="section-head assistant-step"><h3>${tr("Map source columns", "مطابقة أعمدة المصدر")}</h3><span class="pill blue">${num(data.length)} ${tr("nonblank rows", "صف غير فارغ")}</span></div><p class="small muted">${tr("Reference is required. Description is required for new records. Map revision when the source has revisions.", "المرجع مطلوب. الوصف مطلوب للسجلات الجديدة. اربط المراجعة إذا كانت موجودة في المصدر.")}</p><div class="assistant-map-grid">${fields.map((f) => `<label class="field"><span>${label(f)}</span><select data-map-field="${f}">${options([["", tr("Not mapped, keep existing", "غير مربوط، احتفظ بالمحفوظ")], ...headers.map((h, i) => [String(i), String(i + 1) + ". " + h])], mapping[f])}</select></label>`).join("")}</div><details class="assistant-source-preview"><summary>${tr("View first 5 source rows", "عرض أول 5 صفوف من المصدر")}</summary><div class="table-wrap"><table><thead><tr>${headers.map((h) => `<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${data
+        formatNote +
+        `<div class="section-head assistant-step"><h3>${tr("Map source columns", "مطابقة أعمدة المصدر")}</h3><span class="pill blue">${num(data.length)} ${tr("nonblank rows", "صف غير فارغ")}</span></div><p class="small muted">${tr("Reference is required. Description is required for new records. Map revision when the source has revisions.", "المرجع مطلوب. الوصف مطلوب للسجلات الجديدة. اربط المراجعة إذا كانت موجودة في المصدر.")}</p><div class="assistant-map-grid">${fields.map((f) => `<label class="field"><span>${label(f)}${fuzzyFields.includes(f) ? ` <small class="muted">${tr("(auto)", "(تلقائي)")}</small>` : ""}</span><select data-map-field="${f}">${options([["", tr("Not mapped, keep existing", "غير مربوط، احتفظ بالمحفوظ")], ...headers.map((h, i) => [String(i), String(i + 1) + ". " + h])], mapping[f])}</select></label>`).join("")}</div>${unmappedNote}<details class="assistant-source-preview"><summary>${tr("View first 5 source rows", "عرض أول 5 صفوف من المصدر")}</summary><div class="table-wrap"><table><thead><tr>${headers.map((h) => `<th>${esc(h)}</th>`).join("")}</tr></thead><tbody>${data
           .slice(0, 5)
           .map(
             (r) =>
@@ -631,13 +691,7 @@ export function createAssistant(ctx) {
       stateChoices();
       invalidate();
     }
-    async function readSheet() {
-      invalidate();
-      grid = [];
-      data = [];
-      const name = $("#assistant-sheet", w).value,
-        sheet = book.Sheets[name],
-        XLSX = await import("xlsx");
+    function gridFromSheet(sheet, XLSX) {
       const range = XLSX.utils.decode_range(
         sheet["!fullref"] || sheet["!ref"] || "A1",
       );
@@ -648,20 +702,37 @@ export function createAssistant(ctx) {
             "الورقة كبيرة. الحد 5000 صف بيانات و50 صف عناوين و100 عمود.",
           ),
         );
-      grid = XLSX.utils.sheet_to_json(sheet, {
+      const g = XLSX.utils.sheet_to_json(sheet, {
         header: 1,
         range: 0,
         defval: "",
         blankrows: true,
         raw: true,
       });
-      grid.forEach((row, r) =>
+      g.forEach((row, r) =>
         row.forEach((v, c) => {
           const cell = sheet[XLSX.utils.encode_cell({ r, c })];
           if (cell?.t === "n" && cell.w != null) row[c] = cell.w;
         }),
       );
+      return g;
+    }
+    async function readSheet() {
+      invalidate();
+      grid = [];
+      data = [];
+      savedMatch = null;
+      w.savedStatusMap = null;
+      const name = $("#assistant-sheet", w).value,
+        sheet = book.Sheets[name],
+        XLSX = await import("xlsx");
+      grid = gridFromSheet(sheet, XLSX);
+      $("#assistant-header", w).value = String(detectHeaderRow(grid) + 1);
       renderMap();
+      if (savedMatch && !autoRan) {
+        autoRan = true;
+        await runAnalyze($("#assistant-analyze", w));
+      }
     }
     const fail = (e) => {
       $("#assistant-import-preview", w).innerHTML =
@@ -691,7 +762,24 @@ export function createAssistant(ctx) {
         $("#assistant-sheet", w).innerHTML = options(
           book.SheetNames.map((n) => [n, n]),
         );
-        $("#assistant-header", w).value = "1";
+        autoRan = false;
+        try {
+          const X = await import("xlsx");
+          let bestName = book.SheetNames[0],
+            bestSheetScore = 1;
+          for (const nm of book.SheetNames) {
+            const sc = headerScore(
+              gridFromSheet(book.Sheets[nm], X).slice(0, 12),
+            ).score;
+            if (sc > bestSheetScore) {
+              bestSheetScore = sc;
+              bestName = nm;
+            }
+          }
+          $("#assistant-sheet", w).value = bestName;
+        } catch {
+          /* keep the first sheet */
+        }
         await readSheet();
         $("#assistant-workbook", w).hidden = false;
       } catch (e) {
@@ -709,10 +797,9 @@ export function createAssistant(ctx) {
     };
     $("#assistant-date-mode", w).onchange = invalidate;
     $("#assistant-register", w).onchange = invalidate;
-    $("#assistant-analyze", w).onclick = async (e) => {
+    async function runAnalyze(b) {
       invalidate();
-      const ticket = selection,
-        b = e.currentTarget;
+      const ticket = selection;
       b.disabled = true;
       try {
         if (!book || !data.length)
@@ -780,9 +867,34 @@ export function createAssistant(ctx) {
           fileName: $("#assistant-file", w).files[0].name,
           sheetName: $("#assistant-sheet", w).value,
         });
+        w.applied = {
+          mapped: Object.fromEntries(
+            fields
+              .filter((f) => mapping[f] !== "" && mapping[f] != null)
+              .map((f) => [f, headers[Number(mapping[f])]]),
+          ),
+          dateMode: $("#assistant-date-mode", w).value,
+          category: cat,
+          statusMap: Object.fromEntries(
+            Object.entries(stateMap).filter(([, v]) => v),
+          ),
+        };
         const { errors, added, updated } = prepared;
+        const cl = prepared.cleaning || { dates: 0, statuses: 0, trimmed: 0 },
+          cleanBits = [];
+        if (cl.dates)
+          cleanBits.push(num(cl.dates) + " " + tr("dates standardized", "تاريخ موحد"));
+        if (cl.statuses)
+          cleanBits.push(num(cl.statuses) + " " + tr("statuses matched", "حالة مطابقة"));
+        if (cl.trimmed)
+          cleanBits.push(num(cl.trimmed) + " " + tr("cells trimmed", "خلية منظفة"));
+        const cleanLine =
+          (savedMatch ? tr("Known format applied. ", "تم تطبيق تنسيق معروف. ") : "") +
+          (cleanBits.length
+            ? tr("Cleaned automatically: ", "نظف تلقائيا: ") + cleanBits.join(" · ")
+            : "");
         $("#assistant-import-preview", w).innerHTML =
-          `<div class="soft-divider"></div><h3>${tr("Review before saving", "راجع قبل الحفظ")}</h3><div class="assistant-preview-counts"><span class="pill green">${num(added)} ${tr("new", "جديد")}</span><span class="pill blue">${num(updated)} ${tr("updates", "تحديث")}</span><span class="pill ${errors.length ? "red" : ""}">${num(errors.length)} ${tr("errors", "خطأ")}</span><span class="pill">0 ${tr("deletions", "حذف")}</span></div><p class="small">${esc(p.code)} · ${esc(ctx.mname(cat))}</p>${
+          `<div class="soft-divider"></div><h3>${tr("Review before saving", "راجع قبل الحفظ")}</h3><div class="assistant-preview-counts"><span class="pill green">${num(added)} ${tr("new", "جديد")}</span><span class="pill blue">${num(updated)} ${tr("updates", "تحديث")}</span><span class="pill ${errors.length ? "red" : ""}">${num(errors.length)} ${tr("errors", "خطأ")}</span><span class="pill">0 ${tr("deletions", "حذف")}</span></div><p class="small">${esc(p.code)} · ${esc(ctx.mname(cat))}</p>${cleanLine ? `<p class="small muted">${esc(cleanLine)}</p>` : ""}${
             errors.length
               ? `<div class="form-error">${errors
                   .slice(0, 12)
@@ -847,7 +959,8 @@ export function createAssistant(ctx) {
       } finally {
         b.disabled = false;
       }
-    };
+    }
+    $("#assistant-analyze", w).onclick = (e) => runAnalyze(e.currentTarget);
   }
   return {
     html,
